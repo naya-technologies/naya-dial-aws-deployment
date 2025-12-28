@@ -70,6 +70,7 @@ Resources:
 
   UserPoolDomain:
     Type: AWS::Cognito::UserPoolDomain
+    DependsOn: UserPool
     Properties:
       Domain: !Sub '${AWS::StackName}-users-${AWS::AccountId}'
       UserPoolId: !Ref UserPool
@@ -155,6 +156,7 @@ Resources:
 
   AdminUserPoolDomain:
     Type: AWS::Cognito::UserPoolDomain
+    DependsOn: AdminUserPool
     Properties:
       Domain: !Sub '${AWS::StackName}-admin-${AWS::AccountId}'
       UserPoolId: !Ref AdminUserPool
