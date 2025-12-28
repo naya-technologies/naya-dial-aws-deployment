@@ -36,6 +36,22 @@ print_warning() {
 ERRORS=0
 WARNINGS=0
 
+###############################################################################
+# Load Configuration
+###############################################################################
+
+# Get script directory
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+# Load parameters.conf if it exists
+if [ -f "${SCRIPT_DIR}/parameters.conf" ]; then
+    source "${SCRIPT_DIR}/parameters.conf"
+fi
+
+###############################################################################
+# Start Checks
+###############################################################################
+
 print_header "DIAL Pre-Installation Checker"
 
 echo "This script checks if your AWS account is ready for DIAL installation."
@@ -74,13 +90,24 @@ fi
 ###############################################################################
 
 echo -e "${BLUE}[3/8]${NC} Checking AWS region..."
-AWS_REGION=$(aws configure get region 2>/dev/null || echo "")
-if [ -z "$AWS_REGION" ]; then
-    print_warning "No default region configured"
-    print_warning "Set a region: aws configure set region us-east-2"
-    ((WARNINGS++))
+
+# Use AWS_REGION from parameters.conf (loaded at the beginning)
+if [ -n "$AWS_REGION" ]; then
+    print_success "Using region from parameters.conf: $AWS_REGION"
+    export AWS_DEFAULT_REGION=$AWS_REGION
 else
-    print_success "Default region: $AWS_REGION"
+    # Fallback to AWS CLI config
+    CLI_REGION=$(aws configure get region 2>/dev/null || echo "")
+    if [ -n "$CLI_REGION" ]; then
+        AWS_REGION="$CLI_REGION"
+        print_success "Using region from AWS config: $AWS_REGION"
+        export AWS_DEFAULT_REGION=$AWS_REGION
+    else
+        print_warning "No region configured in parameters.conf or AWS CLI"
+        print_warning "Will use il-central-1 (Tel Aviv) as default"
+        AWS_REGION="il-central-1"
+        export AWS_DEFAULT_REGION=$AWS_REGION
+    fi
 fi
 
 ###############################################################################
@@ -147,8 +174,12 @@ fi
 
 echo -e "${BLUE}[6/8]${NC} Checking parameters.conf..."
 
-if [ -f "parameters.conf" ]; then
-    source parameters.conf
+if [ ! -f "${SCRIPT_DIR}/parameters.conf" ]; then
+    print_error "parameters.conf not found"
+    print_error "Please create parameters.conf from the template"
+    ((ERRORS++))
+else
+    # Parameters already loaded at the beginning of script
     
     if [ -z "$DOMAIN_NAME" ]; then
         print_error "DOMAIN_NAME not set in parameters.conf"
@@ -173,10 +204,6 @@ if [ -f "parameters.conf" ]; then
     else
         print_success "ADMIN_EMAIL: $ADMIN_EMAIL"
     fi
-else
-    print_error "parameters.conf not found"
-    print_error "Please create parameters.conf from the template"
-    ((ERRORS++))
 fi
 
 ###############################################################################

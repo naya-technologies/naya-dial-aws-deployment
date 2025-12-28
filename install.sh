@@ -129,7 +129,7 @@ if [[ ! "$ADMIN_EMAIL" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; t
 fi
 
 # Set defaults for optional parameters
-AWS_REGION=${AWS_REGION:-us-east-2}
+AWS_REGION=${AWS_REGION:-il-central-1}
 STACK_NAME=${STACK_NAME:-dial-production}
 EKS_CLUSTER_NAME=${EKS_CLUSTER_NAME:-dial-cluster}
 CERTIFICATE_OPTION=${CERTIFICATE_OPTION:-auto}
