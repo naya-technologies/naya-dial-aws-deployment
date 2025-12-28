@@ -37,8 +37,6 @@ Resources:
         CaseSensitive: false
       UsernameAttributes:
         - email
-      AliasAttributes:
-        - phone_number
       AutoVerifiedAttributes:
         - email
       AdminCreateUserConfig:
