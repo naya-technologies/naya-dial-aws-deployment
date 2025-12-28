@@ -267,24 +267,48 @@ fi
 
 # Check if stack already exists
 if aws cloudformation describe-stacks --stack-name ${STACK_NAME} --region ${AWS_REGION} &> /dev/null; then
-    print_warning "Stack ${STACK_NAME} already exists"
-    read -p "Do you want to update it? (yes/no): " UPDATE_CONFIRM
-    if [ "$UPDATE_CONFIRM" == "yes" ]; then
-        print_info "Updating stack..."
-        aws cloudformation update-stack \
+    STACK_STATUS=$(aws cloudformation describe-stacks --stack-name ${STACK_NAME} --region ${AWS_REGION} --query 'Stacks[0].StackStatus' --output text)
+    
+    if [ "$STACK_STATUS" == "ROLLBACK_COMPLETE" ]; then
+        print_warning "Stack ${STACK_NAME} is in ROLLBACK_COMPLETE state and cannot be updated"
+        print_warning "Deleting the failed stack..."
+        
+        aws cloudformation delete-stack --stack-name ${STACK_NAME} --region ${AWS_REGION}
+        print_info "Waiting for stack deletion..."
+        aws cloudformation wait stack-delete-complete --stack-name ${STACK_NAME} --region ${AWS_REGION}
+        print_success "Stack deleted. Creating fresh stack..."
+        
+        # Create new stack after deletion
+        print_info "Creating stack..."
+        aws cloudformation create-stack \
             --stack-name ${STACK_NAME} \
             --template-body file:///tmp/dial-main-updated.yaml \
             --parameters ${PARAMS} \
             --capabilities CAPABILITY_NAMED_IAM \
             --region ${AWS_REGION}
         
-        print_info "Waiting for stack update to complete..."
-        aws cloudformation wait stack-update-complete \
-            --stack-name ${STACK_NAME} \
-            --region ${AWS_REGION}
+        print_success "Stack creation initiated"
+        print_info "Waiting for stack creation to complete (this will take 25-35 minutes)..."
+        aws cloudformation wait stack-create-complete --stack-name ${STACK_NAME} --region ${AWS_REGION}
     else
-        print_error "Cannot proceed - stack already exists"
-        exit 1
+        print_warning "Stack ${STACK_NAME} already exists (Status: ${STACK_STATUS})"
+        read -p "Do you want to update it? (yes/no): " UPDATE_CONFIRM
+        if [ "$UPDATE_CONFIRM" == "yes" ]; then
+            print_info "Updating stack..."
+            aws cloudformation update-stack \
+                --stack-name ${STACK_NAME} \
+                --template-body file:///tmp/dial-main-updated.yaml \
+                --parameters ${PARAMS} \
+                --capabilities CAPABILITY_NAMED_IAM \
+                --region ${AWS_REGION}
+            
+            print_success "Stack update initiated"
+            print_info "Waiting for stack update to complete (this will take 20-30 minutes)..."
+            aws cloudformation wait stack-update-complete --stack-name ${STACK_NAME} --region ${AWS_REGION}
+        else
+            print_warning "Installation cancelled"
+            exit 0
+        fi
     fi
 else
     # Create new stack
@@ -298,11 +322,8 @@ else
 
     print_success "Stack creation initiated"
     print_info "Waiting for stack creation to complete (this will take 25-35 minutes)..."
-    
-    # Wait with progress indicator
-    aws cloudformation wait stack-create-complete \
-        --stack-name ${STACK_NAME} \
-        --region ${AWS_REGION}
+    aws cloudformation wait stack-create-complete --stack-name ${STACK_NAME} --region ${AWS_REGION}
+fi
 fi
 
 print_success "CloudFormation stack deployed successfully!"
