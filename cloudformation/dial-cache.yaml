@@ -19,8 +19,8 @@ Resources:
   RedisUser:
     Type: AWS::ElastiCache::User
     Properties:
-      UserId: !Sub '${AWS::StackName}-redis-user'
-      UserName: !Sub '${AWS::StackName}-redis-user'
+      UserId: !Sub 'dial-redis-${AWS::AccountId}'
+      UserName: !Sub 'dial-redis-${AWS::AccountId}'
       Engine: Redis
       AccessString: 'on ~* +@all'
       AuthenticationMode:
@@ -35,7 +35,7 @@ Resources:
   RedisPasswordSecret:
     Type: AWS::SecretsManager::Secret
     Properties:
-      Name: !Sub '${AWS::StackName}-redis-password'
+      Name: !Sub 'dial-redis-pwd-${AWS::AccountId}'
       Description: Redis user password
       GenerateSecretString:
         SecretStringTemplate: '{}'
@@ -50,7 +50,7 @@ Resources:
   RedisUserGroup:
     Type: AWS::ElastiCache::UserGroup
     Properties:
-      UserGroupId: !Sub '${AWS::StackName}-redis-ug'
+      UserGroupId: !Sub 'dial-ug-${AWS::AccountId}'
       Engine: Redis
       UserIds:
         - default

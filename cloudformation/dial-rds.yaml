@@ -55,7 +55,7 @@ Resources:
     Type: AWS::RDS::DBCluster
     DeletionPolicy: Snapshot
     Properties:
-      DBClusterIdentifier: !Sub '${AWS::StackName}-aurora-cluster'
+      DBClusterIdentifier: !Sub 'dial-db-${AWS::AccountId}'
       Engine: aurora-postgresql
       EngineMode: provisioned
       EngineVersion: '15.5'
@@ -83,7 +83,7 @@ Resources:
   AuroraInstance1:
     Type: AWS::RDS::DBInstance
     Properties:
-      DBInstanceIdentifier: !Sub '${AWS::StackName}-aurora-instance-1'
+      DBInstanceIdentifier: !Sub 'dial-db-1-${AWS::AccountId}'
       DBClusterIdentifier: !Ref AuroraCluster
       DBInstanceClass: db.serverless
       Engine: aurora-postgresql
@@ -96,7 +96,7 @@ Resources:
   AuroraInstance2:
     Type: AWS::RDS::DBInstance
     Properties:
-      DBInstanceIdentifier: !Sub '${AWS::StackName}-aurora-instance-2'
+      DBInstanceIdentifier: !Sub 'dial-db-2-${AWS::AccountId}'
       DBClusterIdentifier: !Ref AuroraCluster
       DBInstanceClass: db.serverless
       Engine: aurora-postgresql
