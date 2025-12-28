@@ -95,6 +95,39 @@ echo -e "${BLUE}[3/8]${NC} Checking AWS region..."
 if [ -n "$AWS_REGION" ]; then
     print_success "Using region from parameters.conf: $AWS_REGION"
     export AWS_DEFAULT_REGION=$AWS_REGION
+    
+    # Check if region is available/enabled
+    echo -e "${BLUE}     ${NC} Verifying region availability..."
+    REGION_CHECK=$(aws ec2 describe-regions --all-regions \
+        --query "Regions[?RegionName==\`${AWS_REGION}\`].OptInStatus" \
+        --output text 2>/dev/null)
+    
+    if [ "$REGION_CHECK" == "opted-in" ] || [ "$REGION_CHECK" == "opt-in-not-required" ]; then
+        print_success "Region ${AWS_REGION} is available (${REGION_CHECK})"
+        
+        # Test actual access to the region
+        if aws ec2 describe-vpcs --region ${AWS_REGION} --max-results 1 &> /dev/null; then
+            print_success "Verified access to ${AWS_REGION}"
+        else
+            print_warning "Region is enabled but cannot access resources"
+            print_warning "This may be a temporary issue or permissions problem"
+            ((WARNINGS++))
+        fi
+    elif [ "$REGION_CHECK" == "not-opted-in" ]; then
+        print_error "Region ${AWS_REGION} is not enabled for your account"
+        print_error "To enable it, visit: https://console.aws.amazon.com/billing/home#/account"
+        print_error "Or run: aws ec2 enable-region --region-name ${AWS_REGION}"
+        ((ERRORS++))
+    elif [ -z "$REGION_CHECK" ]; then
+        print_error "Region ${AWS_REGION} does not exist or is not valid"
+        print_error "Available regions for your account:"
+        aws ec2 describe-regions --query 'Regions[?OptInStatus!=`not-opted-in`].RegionName' \
+            --output text 2>/dev/null | tr '\t' '\n'
+        ((ERRORS++))
+    else
+        print_warning "Unknown region status: ${REGION_CHECK}"
+        ((WARNINGS++))
+    fi
 else
     # Fallback to AWS CLI config
     CLI_REGION=$(aws configure get region 2>/dev/null || echo "")
@@ -116,31 +149,39 @@ fi
 
 echo -e "${BLUE}[4/8]${NC} Checking IAM permissions..."
 
-# Check if user can create resources
-PERM_ERRORS=0
-
-if ! aws iam list-roles --max-items 1 --region ${AWS_REGION} &> /dev/null; then
-    print_warning "Cannot list IAM roles - you may not have sufficient permissions"
-    ((WARNINGS++))
-    ((PERM_ERRORS++))
-fi
-
-if ! aws ec2 describe-vpcs --max-results 1 --region ${AWS_REGION} &> /dev/null; then
-    print_warning "Cannot describe VPCs - you may not have EC2 permissions in ${AWS_REGION}"
-    ((WARNINGS++))
-    ((PERM_ERRORS++))
-fi
-
-if ! aws eks list-clusters --region ${AWS_REGION} &> /dev/null; then
-    print_warning "Cannot list EKS clusters - you may not have EKS permissions in ${AWS_REGION}"
-    ((WARNINGS++))
-    ((PERM_ERRORS++))
-fi
-
-if [ $PERM_ERRORS -eq 0 ]; then
-    print_success "Basic IAM permissions OK in ${AWS_REGION}"
+# Skip if region check failed
+if [ $ERRORS -gt 0 ]; then
+    print_warning "Skipping permissions check due to region errors"
 else
-    print_warning "Some permissions checks failed - ensure you have admin-level access in ${AWS_REGION}"
+    # Check if user can create resources
+    PERM_ERRORS=0
+    
+    if ! aws iam list-roles --max-items 1 --region ${AWS_REGION} &> /dev/null; then
+        print_warning "Cannot list IAM roles - you may not have sufficient permissions"
+        ((WARNINGS++))
+        ((PERM_ERRORS++))
+    fi
+    
+    if ! aws ec2 describe-vpcs --max-results 1 --region ${AWS_REGION} &> /dev/null; then
+        print_warning "Cannot describe VPCs - you may not have EC2 permissions in ${AWS_REGION}"
+        print_warning "Note: If ${AWS_REGION} is not enabled in your account, this is expected"
+        ((WARNINGS++))
+        ((PERM_ERRORS++))
+    fi
+    
+    if ! aws eks list-clusters --region ${AWS_REGION} &> /dev/null; then
+        print_warning "Cannot list EKS clusters - you may not have EKS permissions in ${AWS_REGION}"
+        print_warning "Note: If ${AWS_REGION} is not enabled in your account, this is expected"
+        ((WARNINGS++))
+        ((PERM_ERRORS++))
+    fi
+    
+    if [ $PERM_ERRORS -eq 0 ]; then
+        print_success "Basic IAM permissions OK in ${AWS_REGION}"
+    else
+        print_warning "Some permissions checks failed in ${AWS_REGION}"
+        print_warning "If this is a new region, you may need to enable it first"
+    fi
 fi
 
 ###############################################################################
