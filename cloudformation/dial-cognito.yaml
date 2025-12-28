@@ -145,7 +145,7 @@ Resources:
           RequireLowercase: true
           RequireNumbers: true
           RequireSymbols: true
-      MfaConfiguration: REQUIRED  # MFA required for admins
+      MfaConfiguration: OPTIONAL  # MFA optional (REQUIRED needs SMS configuration)
       EnabledMfas:
         - SOFTWARE_TOKEN_MFA
       UserAttributeUpdateSettings:
