@@ -1,0 +1,56 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'DIAL S3 Storage Bucket'
+
+Resources:
+  DIALBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'dial-storage-${AWS::AccountId}-${AWS::Region}'
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldVersions
+            Status: Enabled
+            NoncurrentVersionExpirationInDays: 90
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-storage-bucket'
+
+  DIALBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref DIALBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !GetAtt DIALBucket.Arn
+              - !Sub '${DIALBucket.Arn}/*'
+            Condition:
+              Bool:
+                'aws:SecureTransport': 'false'
+
+Outputs:
+  S3BucketName:
+    Description: S3 Bucket Name for DIAL storage
+    Value: !Ref DIALBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-S3BucketName'
+
+  S3BucketArn:
+    Description: S3 Bucket ARN
+    Value: !GetAtt DIALBucket.Arn

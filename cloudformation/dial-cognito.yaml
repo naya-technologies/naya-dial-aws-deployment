@@ -1,0 +1,284 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'DIAL Cognito User Pools - Separate pools for Users and Admins'
+
+Parameters:
+  UserPoolName:
+    Type: String
+    Default: dial-users
+    Description: Name for the Chat/Users User Pool
+  
+  AdminUserPoolName:
+    Type: String
+    Default: dial-admins
+    Description: Name for the Admin User Pool
+  
+  DomainName:
+    Type: String
+    Description: Base domain name for callback URLs
+  
+  DisableSelfRegistration:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+
+Conditions:
+  SelfRegistrationDisabled: !Equals [!Ref DisableSelfRegistration, 'true']
+
+Resources:
+  ###############################################################################
+  # User Pool for End Users (Chat)
+  ###############################################################################
+  
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Ref UserPoolName
+      UsernameConfiguration:
+        CaseSensitive: false
+      UsernameAttributes:
+        - email
+      AliasAttributes:
+        - phone_number
+      AutoVerifiedAttributes:
+        - email
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: !If [SelfRegistrationDisabled, true, false]
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Required: true
+          Mutable: true
+        - Name: name
+          AttributeDataType: String
+          Required: true
+          Mutable: true
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+      MfaConfiguration: OPTIONAL
+      EnabledMfas:
+        - SOFTWARE_TOKEN_MFA
+      UserAttributeUpdateSettings:
+        AttributesRequireVerificationBeforeUpdate:
+          - email
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: verified_email
+            Priority: 1
+      UserPoolTags:
+        Name: !Sub '${UserPoolName}-chat'
+        Type: 'EndUsers'
+
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Sub '${AWS::StackName}-users-${AWS::AccountId}'
+      UserPoolId: !Ref UserPool
+
+  ChatAppClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub '${UserPoolName}-chat-client'
+      UserPoolId: !Ref UserPool
+      GenerateSecret: true
+      ExplicitAuthFlows:
+        - ALLOW_CUSTOM_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_USER_SRP_AUTH
+      AllowedOAuthFlows:
+        - code
+      AllowedOAuthScopes:
+        - openid
+        - email
+        - profile
+      AllowedOAuthFlowsUserPoolClient: true
+      CallbackURLs:
+        - !Sub 'https://chat.${DomainName}/api/auth/callback/cognito'
+      LogoutURLs:
+        - !Sub 'https://chat.${DomainName}'
+      SupportedIdentityProviders:
+        - COGNITO
+      PreventUserExistenceErrors: ENABLED
+      EnableTokenRevocation: true
+      RefreshTokenValidity: 30
+      AccessTokenValidity: 60
+      IdTokenValidity: 60
+      TokenValidityUnits:
+        RefreshToken: days
+        AccessToken: minutes
+        IdToken: minutes
+
+  ###############################################################################
+  # User Pool for Admins
+  ###############################################################################
+  
+  AdminUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Ref AdminUserPoolName
+      UsernameConfiguration:
+        CaseSensitive: false
+      UsernameAttributes:
+        - email
+      AutoVerifiedAttributes:
+        - email
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: true  # Always true for admin pool
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Required: true
+          Mutable: true
+        - Name: name
+          AttributeDataType: String
+          Required: true
+          Mutable: true
+        - Name: role
+          AttributeDataType: String
+          Mutable: true
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 12  # Stronger password for admins
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+      MfaConfiguration: REQUIRED  # MFA required for admins
+      EnabledMfas:
+        - SOFTWARE_TOKEN_MFA
+      UserAttributeUpdateSettings:
+        AttributesRequireVerificationBeforeUpdate:
+          - email
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: verified_email
+            Priority: 1
+      UserPoolTags:
+        Name: !Sub '${UserPoolName}-admin'
+        Type: 'Administrators'
+
+  AdminUserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Sub '${AWS::StackName}-admin-${AWS::AccountId}'
+      UserPoolId: !Ref AdminUserPool
+
+  AdminAppClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub '${UserPoolName}-admin-client'
+      UserPoolId: !Ref AdminUserPool
+      GenerateSecret: true
+      ExplicitAuthFlows:
+        - ALLOW_CUSTOM_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_USER_SRP_AUTH
+      AllowedOAuthFlows:
+        - code
+      AllowedOAuthScopes:
+        - openid
+        - email
+        - profile
+      AllowedOAuthFlowsUserPoolClient: true
+      CallbackURLs:
+        - !Sub 'https://admin.${DomainName}/api/auth/callback/cognito'
+      LogoutURLs:
+        - !Sub 'https://admin.${DomainName}'
+      SupportedIdentityProviders:
+        - COGNITO
+      PreventUserExistenceErrors: ENABLED
+      EnableTokenRevocation: true
+      RefreshTokenValidity: 7  # Shorter refresh for admins
+      AccessTokenValidity: 30  # Shorter access token for admins
+      IdTokenValidity: 30
+      TokenValidityUnits:
+        RefreshToken: days
+        AccessToken: minutes
+        IdToken: minutes
+
+Outputs:
+  ###############################################################################
+  # User Pool Outputs
+  ###############################################################################
+  
+  UserPoolId:
+    Description: Cognito User Pool ID (Chat Users)
+    Value: !Ref UserPool
+    Export:
+      Name: !Sub '${AWS::StackName}-UserPoolId'
+
+  UserPoolArn:
+    Description: Cognito User Pool ARN (Chat Users)
+    Value: !GetAtt UserPool.Arn
+
+  ClientId:
+    Description: Cognito App Client ID (Chat)
+    Value: !Ref ChatAppClient
+    Export:
+      Name: !Sub '${AWS::StackName}-ClientId'
+
+  ClientSecret:
+    Description: Cognito App Client Secret (Chat) - retrieve via AWS CLI
+    Value: !Sub |
+      Run: aws cognito-idp describe-user-pool-client --user-pool-id ${UserPool} --client-id ${ChatAppClient} --query 'UserPoolClient.ClientSecret' --output text
+
+  CognitoIssuerUrl:
+    Description: Cognito Issuer URL for OIDC (Chat)
+    Value: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}'
+    Export:
+      Name: !Sub '${AWS::StackName}-IssuerUrl'
+
+  CognitoJWKSUrl:
+    Description: Cognito JWKS URL (Chat)
+    Value: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}/.well-known/jwks.json'
+    Export:
+      Name: !Sub '${AWS::StackName}-JWKSUrl'
+
+  CognitoHostedUIUrl:
+    Description: Cognito Hosted UI URL (Chat)
+    Value: !Sub 'https://${UserPoolDomain}.auth.${AWS::Region}.amazoncognito.com'
+
+  ###############################################################################
+  # Admin Pool Outputs
+  ###############################################################################
+  
+  AdminUserPoolId:
+    Description: Cognito User Pool ID (Admins)
+    Value: !Ref AdminUserPool
+    Export:
+      Name: !Sub '${AWS::StackName}-AdminUserPoolId'
+
+  AdminUserPoolArn:
+    Description: Cognito User Pool ARN (Admins)
+    Value: !GetAtt AdminUserPool.Arn
+
+  AdminClientId:
+    Description: Cognito App Client ID (Admin)
+    Value: !Ref AdminAppClient
+    Export:
+      Name: !Sub '${AWS::StackName}-AdminClientId'
+
+  AdminClientSecret:
+    Description: Cognito App Client Secret (Admin) - retrieve via AWS CLI
+    Value: !Sub |
+      Run: aws cognito-idp describe-user-pool-client --user-pool-id ${AdminUserPool} --client-id ${AdminAppClient} --query 'UserPoolClient.ClientSecret' --output text
+
+  AdminCognitoIssuerUrl:
+    Description: Cognito Issuer URL for OIDC (Admin)
+    Value: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${AdminUserPool}'
+    Export:
+      Name: !Sub '${AWS::StackName}-AdminIssuerUrl'
+
+  AdminCognitoJWKSUrl:
+    Description: Cognito JWKS URL (Admin)
+    Value: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${AdminUserPool}/.well-known/jwks.json'
+    Export:
+      Name: !Sub '${AWS::StackName}-AdminJWKSUrl'
+
+  AdminCognitoHostedUIUrl:
+    Description: Cognito Hosted UI URL (Admin)
+    Value: !Sub 'https://${AdminUserPoolDomain}.auth.${AWS::Region}.amazoncognito.com'

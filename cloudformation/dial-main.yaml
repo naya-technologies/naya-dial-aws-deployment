@@ -1,0 +1,297 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'DIAL Marketplace Product - Main Stack'
+
+Parameters:
+  # Domain and Certificate
+  DomainName:
+    Type: String
+    Description: Base domain name for DIAL deployment (e.g., example.com)
+  
+  CreateACMCertificate:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: Whether to create ACM certificate (set false if using external cert)
+  
+  ExistingCertificateArn:
+    Type: String
+    Default: ''
+    Description: Existing ACM certificate ARN (if CreateACMCertificate is false)
+  
+  # EKS Configuration
+  EKSClusterName:
+    Type: String
+    Default: 'dial-cluster'
+    Description: Name for the EKS cluster
+  
+  KubernetesVersion:
+    Type: String
+    Default: '1.31'
+    Description: Kubernetes version
+  
+  # Database Configuration
+  DBMasterUsername:
+    Type: String
+    Default: 'postgres'
+    Description: RDS master username
+  
+  DBMasterPassword:
+    Type: String
+    NoEcho: true
+    MinLength: 8
+    Description: RDS master password
+  
+  DBName:
+    Type: String
+    Default: 'dialadmin'
+    Description: Initial database name
+  
+  # Cognito Configuration
+  CognitoUserPoolName:
+    Type: String
+    Default: 'dial-users'
+    Description: Cognito User Pool name for chat users
+  
+  CognitoAdminUserPoolName:
+    Type: String
+    Default: 'dial-admins'
+    Description: Cognito User Pool name for admins
+    Description: Cognito User Pool name
+  
+  DisableSelfRegistration:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: Disable self-registration in Cognito
+  
+  # Network Configuration
+  VPCCidr:
+    Type: String
+    Default: '10.0.0.0/16'
+    Description: CIDR block for VPC
+  
+  PublicSubnet1Cidr:
+    Type: String
+    Default: '10.0.1.0/24'
+  
+  PublicSubnet2Cidr:
+    Type: String
+    Default: '10.0.2.0/24'
+  
+  PrivateSubnet1Cidr:
+    Type: String
+    Default: '10.0.10.0/24'
+  
+  PrivateSubnet2Cidr:
+    Type: String
+    Default: '10.0.11.0/24'
+
+Conditions:
+  ShouldCreateCertificate: !Equals [!Ref CreateACMCertificate, 'true']
+  HasExistingCertificate: !Not [!Equals [!Ref ExistingCertificateArn, '']]
+
+Resources:
+  # VPC and Networking
+  VPCStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub 'https://${TemplatesBucket}.s3.${AWS::Region}.amazonaws.com/dial-vpc.yaml'
+      Parameters:
+        VPCCidr: !Ref VPCCidr
+        PublicSubnet1Cidr: !Ref PublicSubnet1Cidr
+        PublicSubnet2Cidr: !Ref PublicSubnet2Cidr
+        PrivateSubnet1Cidr: !Ref PrivateSubnet1Cidr
+        PrivateSubnet2Cidr: !Ref PrivateSubnet2Cidr
+
+  # ACM Certificate
+  Certificate:
+    Type: AWS::CertificateManager::Certificate
+    Condition: ShouldCreateCertificate
+    Properties:
+      DomainName: !Ref DomainName
+      SubjectAlternativeNames:
+        - !Sub '*.${DomainName}'
+      ValidationMethod: DNS
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-certificate'
+
+  # EKS Cluster
+  EKSStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: VPCStack
+    Properties:
+      TemplateURL: !Sub 'https://${TemplatesBucket}.s3.${AWS::Region}.amazonaws.com/dial-eks.yaml'
+      Parameters:
+        ClusterName: !Ref EKSClusterName
+        KubernetesVersion: !Ref KubernetesVersion
+        VPCId: !GetAtt VPCStack.Outputs.VPCId
+        PrivateSubnet1Id: !GetAtt VPCStack.Outputs.PrivateSubnet1Id
+        PrivateSubnet2Id: !GetAtt VPCStack.Outputs.PrivateSubnet2Id
+        EKSSecurityGroupId: !GetAtt VPCStack.Outputs.EKSSecurityGroupId
+
+  # IAM Roles for IRSA
+  IAMStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: EKSStack
+    Properties:
+      TemplateURL: !Sub 'https://${TemplatesBucket}.s3.${AWS::Region}.amazonaws.com/dial-iam.yaml'
+      Parameters:
+        OIDCProviderArn: !GetAtt EKSStack.Outputs.OIDCProviderArn
+        OIDCProviderUrl: !GetAtt EKSStack.Outputs.OIDCProviderUrl
+        S3BucketName: !GetAtt StorageStack.Outputs.S3BucketName
+        RedisCacheArn: !GetAtt CacheStack.Outputs.RedisCacheArn
+        RedisUserArn: !GetAtt CacheStack.Outputs.RedisUserArn
+
+  # S3 Storage
+  StorageStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub 'https://${TemplatesBucket}.s3.${AWS::Region}.amazonaws.com/dial-storage.yaml'
+
+  # ElastiCache Redis
+  CacheStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: VPCStack
+    Properties:
+      TemplateURL: !Sub 'https://${TemplatesBucket}.s3.${AWS::Region}.amazonaws.com/dial-cache.yaml'
+      Parameters:
+        VPCId: !GetAtt VPCStack.Outputs.VPCId
+        PrivateSubnet1Id: !GetAtt VPCStack.Outputs.PrivateSubnet1Id
+        PrivateSubnet2Id: !GetAtt VPCStack.Outputs.PrivateSubnet2Id
+        RedisSecurityGroupId: !GetAtt VPCStack.Outputs.RedisSecurityGroupId
+
+  # RDS PostgreSQL
+  DatabaseStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: VPCStack
+    Properties:
+      TemplateURL: !Sub 'https://${TemplatesBucket}.s3.${AWS::Region}.amazonaws.com/dial-rds.yaml'
+      Parameters:
+        VPCId: !GetAtt VPCStack.Outputs.VPCId
+        PrivateSubnet1Id: !GetAtt VPCStack.Outputs.PrivateSubnet1Id
+        PrivateSubnet2Id: !GetAtt VPCStack.Outputs.PrivateSubnet2Id
+        RDSSecurityGroupId: !GetAtt VPCStack.Outputs.RDSSecurityGroupId
+        DBMasterUsername: !Ref DBMasterUsername
+        DBMasterPassword: !Ref DBMasterPassword
+        DBName: !Ref DBName
+        MinCapacity: 1
+        MaxCapacity: 128
+
+  # Cognito
+  CognitoStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub 'https://${TemplatesBucket}.s3.${AWS::Region}.amazonaws.com/dial-cognito.yaml'
+      Parameters:
+        UserPoolName: !Ref CognitoUserPoolName
+        AdminUserPoolName: !Ref CognitoAdminUserPoolName
+        DomainName: !Ref DomainName
+        DisableSelfRegistration: !Ref DisableSelfRegistration
+
+  # Helper bucket for nested templates
+  TemplatesBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${AWS::StackName}-templates-${AWS::AccountId}'
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+Outputs:
+  VPCId:
+    Description: VPC ID
+    Value: !GetAtt VPCStack.Outputs.VPCId
+    Export:
+      Name: !Sub '${AWS::StackName}-VPCId'
+  
+  EKSClusterName:
+    Description: EKS Cluster Name
+    Value: !GetAtt EKSStack.Outputs.ClusterName
+    Export:
+      Name: !Sub '${AWS::StackName}-EKSClusterName'
+  
+  OIDCProviderArn:
+    Description: OIDC Provider ARN
+    Value: !GetAtt EKSStack.Outputs.OIDCProviderArn
+  
+  CertificateArn:
+    Description: ACM Certificate ARN
+    Value: !If 
+      - ShouldCreateCertificate
+      - !Ref Certificate
+      - !Ref ExistingCertificateArn
+  
+  S3BucketName:
+    Description: S3 Bucket for DIAL storage
+    Value: !GetAtt StorageStack.Outputs.S3BucketName
+  
+  RedisEndpoint:
+    Description: Redis Endpoint
+    Value: !GetAtt CacheStack.Outputs.RedisEndpoint
+  
+  RedisClusterName:
+    Description: Redis Cluster Name
+    Value: !GetAtt CacheStack.Outputs.RedisClusterName
+  
+  RedisUserId:
+    Description: Redis User ID
+    Value: !GetAtt CacheStack.Outputs.RedisUserId
+  
+  RDSEndpoint:
+    Description: RDS Endpoint
+    Value: !GetAtt DatabaseStack.Outputs.DBEndpoint
+  
+  RDSPort:
+    Description: RDS Port
+    Value: !GetAtt DatabaseStack.Outputs.DBPort
+  
+  CognitoUserPoolId:
+    Description: Cognito User Pool ID (Chat Users)
+    Value: !GetAtt CognitoStack.Outputs.UserPoolId
+  
+  CognitoClientId:
+    Description: Cognito Client ID (Chat)
+    Value: !GetAtt CognitoStack.Outputs.ClientId
+  
+  CognitoClientSecret:
+    Description: Cognito Client Secret (Chat)
+    Value: !GetAtt CognitoStack.Outputs.ClientSecret
+  
+  AdminCognitoUserPoolId:
+    Description: Cognito User Pool ID (Admins)
+    Value: !GetAtt CognitoStack.Outputs.AdminUserPoolId
+  
+  AdminCognitoClientId:
+    Description: Cognito Client ID (Admin)
+    Value: !GetAtt CognitoStack.Outputs.AdminClientId
+  
+  AdminCognitoClientSecret:
+    Description: Cognito Client Secret (Admin)
+    Value: !GetAtt CognitoStack.Outputs.AdminClientSecret
+  
+  CoreRoleArn:
+    Description: Core Service Role ARN
+    Value: !GetAtt IAMStack.Outputs.CoreRoleArn
+  
+  BedrockRoleArn:
+    Description: Bedrock Service Role ARN
+    Value: !GetAtt IAMStack.Outputs.BedrockRoleArn
+  
+  ALBControllerRoleArn:
+    Description: ALB Controller Role ARN
+    Value: !GetAtt IAMStack.Outputs.ALBControllerRoleArn
+  
+  ALBSecurityGroupId:
+    Description: ALB Security Group ID
+    Value: !GetAtt VPCStack.Outputs.ALBSecurityGroupId
+  
+  HelmValuesCommand:
+    Description: Command to generate Helm values
+    Value: !Sub |
+      Run the following to get your Helm values:
+      aws cloudformation describe-stacks --stack-name ${AWS::StackName} --query 'Stacks[0].Outputs'

@@ -1,0 +1,152 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'DIAL RDS Aurora PostgreSQL Serverless v2 Database'
+
+Parameters:
+  VPCId:
+    Type: String
+  
+  PrivateSubnet1Id:
+    Type: String
+  
+  PrivateSubnet2Id:
+    Type: String
+  
+  RDSSecurityGroupId:
+    Type: String
+  
+  DBMasterUsername:
+    Type: String
+    Default: postgres
+  
+  DBMasterPassword:
+    Type: String
+    NoEcho: true
+  
+  DBName:
+    Type: String
+    Default: dialadmin
+  
+  MinCapacity:
+    Type: Number
+    Default: 1
+    Description: Minimum ACU (Aurora Capacity Units)
+  
+  MaxCapacity:
+    Type: Number
+    Default: 128
+    Description: Maximum ACU (Aurora Capacity Units)
+
+Resources:
+  # DB Subnet Group
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupName: !Sub '${AWS::StackName}-db-subnet-group'
+      DBSubnetGroupDescription: Subnet group for DIAL RDS Aurora
+      SubnetIds:
+        - !Ref PrivateSubnet1Id
+        - !Ref PrivateSubnet2Id
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-db-subnet-group'
+
+  # Aurora DB Cluster
+  AuroraCluster:
+    Type: AWS::RDS::DBCluster
+    DeletionPolicy: Snapshot
+    Properties:
+      DBClusterIdentifier: !Sub '${AWS::StackName}-aurora-cluster'
+      Engine: aurora-postgresql
+      EngineMode: provisioned
+      EngineVersion: '15.5'
+      DatabaseName: !Ref DBName
+      MasterUsername: !Ref DBMasterUsername
+      MasterUserPassword: !Ref DBMasterPassword
+      VpcSecurityGroupIds:
+        - !Ref RDSSecurityGroupId
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      BackupRetentionPeriod: 7
+      PreferredBackupWindow: '03:00-04:00'
+      PreferredMaintenanceWindow: 'sun:04:00-sun:05:00'
+      EnableCloudwatchLogsExports:
+        - postgresql
+      StorageEncrypted: true
+      DeletionProtection: true
+      ServerlessV2ScalingConfiguration:
+        MinCapacity: !Ref MinCapacity
+        MaxCapacity: !Ref MaxCapacity
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-aurora-cluster'
+
+  # Aurora DB Instance (required for Serverless v2)
+  AuroraInstance1:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: !Sub '${AWS::StackName}-aurora-instance-1'
+      DBClusterIdentifier: !Ref AuroraCluster
+      DBInstanceClass: db.serverless
+      Engine: aurora-postgresql
+      PubliclyAccessible: false
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-aurora-instance-1'
+
+  # Aurora DB Instance 2 (for HA)
+  AuroraInstance2:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: !Sub '${AWS::StackName}-aurora-instance-2'
+      DBClusterIdentifier: !Ref AuroraCluster
+      DBInstanceClass: db.serverless
+      Engine: aurora-postgresql
+      PubliclyAccessible: false
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-aurora-instance-2'
+
+  # Secret for DB credentials
+  DBCredentialsSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub '${AWS::StackName}-db-credentials'
+      Description: Database credentials for DIAL Admin
+      SecretString: !Sub |
+        {
+          "username": "${DBMasterUsername}",
+          "password": "${DBMasterPassword}",
+          "engine": "aurora-postgresql",
+          "host": "${AuroraCluster.Endpoint.Address}",
+          "port": ${AuroraCluster.Endpoint.Port},
+          "dbname": "${DBName}"
+        }
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-db-credentials'
+
+Outputs:
+  DBEndpoint:
+    Description: Aurora Cluster Endpoint Address
+    Value: !GetAtt AuroraCluster.Endpoint.Address
+    Export:
+      Name: !Sub '${AWS::StackName}-DBEndpoint'
+
+  DBPort:
+    Description: Aurora Port
+    Value: !GetAtt AuroraCluster.Endpoint.Port
+    Export:
+      Name: !Sub '${AWS::StackName}-DBPort'
+
+  DBName:
+    Description: Database Name
+    Value: !Ref DBName
+    Export:
+      Name: !Sub '${AWS::StackName}-DBName'
+
+  DBCredentialsSecretArn:
+    Description: ARN of Secrets Manager secret containing DB credentials
+    Value: !Ref DBCredentialsSecret
+
+  ClusterResourceId:
+    Description: Aurora Cluster Resource ID
+    Value: !GetAtt AuroraCluster.DBClusterResourceId

@@ -1,0 +1,135 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'DIAL ElastiCache Redis Serverless'
+
+Parameters:
+  VPCId:
+    Type: String
+  
+  PrivateSubnet1Id:
+    Type: String
+  
+  PrivateSubnet2Id:
+    Type: String
+  
+  RedisSecurityGroupId:
+    Type: String
+
+Resources:
+  # Redis User
+  RedisUser:
+    Type: AWS::ElastiCache::User
+    Properties:
+      UserId: !Sub '${AWS::StackName}-redis-user'
+      UserName: !Sub '${AWS::StackName}-redis-user'
+      Engine: Redis
+      AccessString: 'on ~* +@all'
+      AuthenticationMode:
+        Type: password
+        Passwords:
+          - !Sub '{{resolve:secretsmanager:${RedisPasswordSecret}:SecretString:password}}'
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-redis-user'
+
+  # Secret for Redis password
+  RedisPasswordSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub '${AWS::StackName}-redis-password'
+      Description: Redis user password
+      GenerateSecretString:
+        SecretStringTemplate: '{}'
+        GenerateStringKey: password
+        PasswordLength: 32
+        ExcludeCharacters: '"@/\'
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-redis-password'
+
+  # Redis User Group
+  RedisUserGroup:
+    Type: AWS::ElastiCache::UserGroup
+    Properties:
+      UserGroupId: !Sub '${AWS::StackName}-redis-ug'
+      Engine: Redis
+      UserIds:
+        - default
+        - !Ref RedisUser
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-redis-user-group'
+
+  # Subnet Group for ElastiCache
+  RedisSubnetGroup:
+    Type: AWS::ElastiCache::SubnetGroup
+    Properties:
+      Description: Subnet group for DIAL Redis
+      SubnetIds:
+        - !Ref PrivateSubnet1Id
+        - !Ref PrivateSubnet2Id
+      CacheSubnetGroupName: !Sub '${AWS::StackName}-redis-subnet-group'
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-redis-subnet-group'
+
+  # ElastiCache Serverless Cache
+  RedisServerlessCache:
+    Type: AWS::ElastiCache::ServerlessCache
+    DependsOn: RedisUserGroup
+    Properties:
+      ServerlessCacheName: !Sub '${AWS::StackName}-redis'
+      Engine: redis
+      Description: DIAL Redis Serverless Cache
+      SecurityGroupIds:
+        - !Ref RedisSecurityGroupId
+      SubnetIds:
+        - !Ref PrivateSubnet1Id
+        - !Ref PrivateSubnet2Id
+      UserGroupId: !Ref RedisUserGroup
+      CacheUsageLimits:
+        DataStorage:
+          Unit: GB
+          Maximum: 5
+        ECPUPerSecond:
+          Maximum: 5000
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-redis'
+
+Outputs:
+  RedisEndpoint:
+    Description: Redis Endpoint (host:port)
+    Value: !Sub 
+      - 'rediss://${Endpoint}:${Port}'
+      - Endpoint: !GetAtt RedisServerlessCache.Endpoint.Address
+        Port: !GetAtt RedisServerlessCache.Endpoint.Port
+    Export:
+      Name: !Sub '${AWS::StackName}-RedisEndpoint'
+
+  RedisClusterName:
+    Description: Redis Cluster Name
+    Value: !Ref RedisServerlessCache
+    Export:
+      Name: !Sub '${AWS::StackName}-RedisClusterName'
+
+  RedisUserId:
+    Description: Redis User ID
+    Value: !Ref RedisUser
+    Export:
+      Name: !Sub '${AWS::StackName}-RedisUserId'
+
+  RedisCacheArn:
+    Description: Redis Cache ARN
+    Value: !Sub 'arn:aws:elasticache:${AWS::Region}:${AWS::AccountId}:serverlesscache:${RedisServerlessCache}'
+    Export:
+      Name: !Sub '${AWS::StackName}-RedisCacheArn'
+
+  RedisUserArn:
+    Description: Redis User ARN
+    Value: !Sub 'arn:aws:elasticache:${AWS::Region}:${AWS::AccountId}:user:${RedisUser}'
+    Export:
+      Name: !Sub '${AWS::StackName}-RedisUserArn'
+
+  RedisPasswordSecretArn:
+    Description: Redis Password Secret ARN
+    Value: !Ref RedisPasswordSecret

@@ -1,0 +1,188 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'DIAL EKS Cluster with OIDC provider'
+
+Parameters:
+  ClusterName:
+    Type: String
+  
+  KubernetesVersion:
+    Type: String
+    Default: '1.31'
+  
+  VPCId:
+    Type: String
+  
+  PrivateSubnet1Id:
+    Type: String
+  
+  PrivateSubnet2Id:
+    Type: String
+  
+  EKSSecurityGroupId:
+    Type: String
+
+Resources:
+  # EKS Cluster IAM Role
+  EKSClusterRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ClusterName}-cluster-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: eks.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonEKSClusterPolicy'
+        - 'arn:aws:iam::aws:policy/AmazonEKSVPCResourceController'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ClusterName}-cluster-role'
+
+  # EKS Node IAM Role
+  EKSNodeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ClusterName}-node-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy'
+        - 'arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy'
+        - 'arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly'
+        - 'arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ClusterName}-node-role'
+
+  # EKS Cluster
+  EKSCluster:
+    Type: AWS::EKS::Cluster
+    Properties:
+      Name: !Ref ClusterName
+      Version: !Ref KubernetesVersion
+      RoleArn: !GetAtt EKSClusterRole.Arn
+      ResourcesVpcConfig:
+        SecurityGroupIds:
+          - !Ref EKSSecurityGroupId
+        SubnetIds:
+          - !Ref PrivateSubnet1Id
+          - !Ref PrivateSubnet2Id
+        EndpointPrivateAccess: true
+        EndpointPublicAccess: true
+      Logging:
+        ClusterLogging:
+          EnabledTypes:
+            - Type: api
+            - Type: audit
+            - Type: authenticator
+            - Type: controllerManager
+            - Type: scheduler
+      Tags:
+        - Key: Name
+          Value: !Ref ClusterName
+
+  # EKS Node Group
+  EKSNodeGroup:
+    Type: AWS::EKS::Nodegroup
+    DependsOn: EKSCluster
+    Properties:
+      ClusterName: !Ref ClusterName
+      NodegroupName: !Sub '${ClusterName}-ng-1'
+      NodeRole: !GetAtt EKSNodeRole.Arn
+      Subnets:
+        - !Ref PrivateSubnet1Id
+        - !Ref PrivateSubnet2Id
+      ScalingConfig:
+        MinSize: 2
+        MaxSize: 10
+        DesiredSize: 3
+      InstanceTypes:
+        - m5.large
+      AmiType: AL2_x86_64
+      DiskSize: 100
+      Tags:
+        Name: !Sub '${ClusterName}-ng-1'
+
+  # OIDC Provider
+  OIDCProvider:
+    Type: AWS::IAM::OIDCProvider
+    Properties:
+      Url: !GetAtt EKSCluster.OpenIdConnectIssuerUrl
+      ClientIdList:
+        - sts.amazonaws.com
+      ThumbprintList:
+        # EKS OIDC thumbprint - valid for all regions
+        - '9e99a48a9960b14926bb7f3b02e22da2b0ab7280'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ClusterName}-oidc-provider'
+
+  # EKS Addon - VPC CNI
+  VPCCNIAddon:
+    Type: AWS::EKS::Addon
+    DependsOn: EKSNodeGroup
+    Properties:
+      ClusterName: !Ref ClusterName
+      AddonName: vpc-cni
+      ResolveConflicts: OVERWRITE
+
+  # EKS Addon - CoreDNS
+  CoreDNSAddon:
+    Type: AWS::EKS::Addon
+    DependsOn: EKSNodeGroup
+    Properties:
+      ClusterName: !Ref ClusterName
+      AddonName: coredns
+      ResolveConflicts: OVERWRITE
+
+  # EKS Addon - kube-proxy
+  KubeProxyAddon:
+    Type: AWS::EKS::Addon
+    DependsOn: EKSNodeGroup
+    Properties:
+      ClusterName: !Ref ClusterName
+      AddonName: kube-proxy
+      ResolveConflicts: OVERWRITE
+
+Outputs:
+  ClusterName:
+    Description: EKS Cluster Name
+    Value: !Ref ClusterName
+    Export:
+      Name: !Sub '${AWS::StackName}-ClusterName'
+
+  ClusterArn:
+    Description: EKS Cluster ARN
+    Value: !GetAtt EKSCluster.Arn
+
+  ClusterEndpoint:
+    Description: EKS Cluster Endpoint
+    Value: !GetAtt EKSCluster.Endpoint
+
+  OIDCProviderArn:
+    Description: OIDC Provider ARN
+    Value: !GetAtt OIDCProvider.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-OIDCProviderArn'
+
+  OIDCProviderUrl:
+    Description: OIDC Provider URL
+    Value: !GetAtt EKSCluster.OpenIdConnectIssuerUrl
+    Export:
+      Name: !Sub '${AWS::StackName}-OIDCProviderUrl'
+
+  ClusterSecurityGroupId:
+    Description: EKS Cluster Security Group ID
+    Value: !GetAtt EKSCluster.ClusterSecurityGroupId
+
+  NodeRoleArn:
+    Description: Node IAM Role ARN
+    Value: !GetAtt EKSNodeRole.Arn
