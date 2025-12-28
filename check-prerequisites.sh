@@ -119,28 +119,28 @@ echo -e "${BLUE}[4/8]${NC} Checking IAM permissions..."
 # Check if user can create resources
 PERM_ERRORS=0
 
-if ! aws iam list-roles --max-items 1 &> /dev/null; then
+if ! aws iam list-roles --max-items 1 --region ${AWS_REGION} &> /dev/null; then
     print_warning "Cannot list IAM roles - you may not have sufficient permissions"
     ((WARNINGS++))
     ((PERM_ERRORS++))
 fi
 
-if ! aws ec2 describe-vpcs --max-results 1 &> /dev/null; then
-    print_warning "Cannot describe VPCs - you may not have EC2 permissions"
+if ! aws ec2 describe-vpcs --max-results 1 --region ${AWS_REGION} &> /dev/null; then
+    print_warning "Cannot describe VPCs - you may not have EC2 permissions in ${AWS_REGION}"
     ((WARNINGS++))
     ((PERM_ERRORS++))
 fi
 
-if ! aws eks list-clusters &> /dev/null; then
-    print_warning "Cannot list EKS clusters - you may not have EKS permissions"
+if ! aws eks list-clusters --region ${AWS_REGION} &> /dev/null; then
+    print_warning "Cannot list EKS clusters - you may not have EKS permissions in ${AWS_REGION}"
     ((WARNINGS++))
     ((PERM_ERRORS++))
 fi
 
 if [ $PERM_ERRORS -eq 0 ]; then
-    print_success "Basic IAM permissions OK"
+    print_success "Basic IAM permissions OK in ${AWS_REGION}"
 else
-    print_warning "Some permissions checks failed - ensure you have admin-level access"
+    print_warning "Some permissions checks failed - ensure you have admin-level access in ${AWS_REGION}"
 fi
 
 ###############################################################################
@@ -150,22 +150,22 @@ fi
 echo -e "${BLUE}[5/8]${NC} Checking AWS service quotas..."
 
 # Check VPC quota
-VPC_COUNT=$(aws ec2 describe-vpcs --query 'Vpcs | length(@)' --output text 2>/dev/null || echo "0")
+VPC_COUNT=$(aws ec2 describe-vpcs --region ${AWS_REGION} --query 'Vpcs | length(@)' --output text 2>/dev/null || echo "0")
 if [ "$VPC_COUNT" -ge 5 ]; then
-    print_warning "You have $VPC_COUNT VPCs (quota is usually 5)"
+    print_warning "You have $VPC_COUNT VPCs in ${AWS_REGION} (quota is usually 5)"
     print_warning "You may need to delete unused VPCs or request quota increase"
     ((WARNINGS++))
 else
-    print_success "VPC quota OK ($VPC_COUNT/5 used)"
+    print_success "VPC quota OK in ${AWS_REGION} ($VPC_COUNT/5 used)"
 fi
 
 # Check EIP quota
-EIP_COUNT=$(aws ec2 describe-addresses --query 'Addresses | length(@)' --output text 2>/dev/null || echo "0")
+EIP_COUNT=$(aws ec2 describe-addresses --region ${AWS_REGION} --query 'Addresses | length(@)' --output text 2>/dev/null || echo "0")
 if [ "$EIP_COUNT" -ge 5 ]; then
-    print_warning "You have $EIP_COUNT Elastic IPs (quota is usually 5)"
+    print_warning "You have $EIP_COUNT Elastic IPs in ${AWS_REGION} (quota is usually 5)"
     ((WARNINGS++))
 else
-    print_success "Elastic IP quota OK ($EIP_COUNT/5 used)"
+    print_success "Elastic IP quota OK in ${AWS_REGION} ($EIP_COUNT/5 used)"
 fi
 
 ###############################################################################
