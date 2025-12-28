@@ -21,7 +21,7 @@ Resources:
     Properties:
       UserId: !Sub 'dial-redis-${AWS::AccountId}'
       UserName: !Sub 'dial-redis-${AWS::AccountId}'
-      Engine: Redis
+      Engine: redis
       AccessString: 'on ~* +@all'
       AuthenticationMode:
         Type: password
@@ -51,7 +51,7 @@ Resources:
     Type: AWS::ElastiCache::UserGroup
     Properties:
       UserGroupId: !Sub 'dial-ug-${AWS::AccountId}'
-      Engine: Redis
+      Engine: redis
       UserIds:
         - default
         - !Ref RedisUser
