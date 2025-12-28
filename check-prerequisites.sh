@@ -106,7 +106,7 @@ if [ -n "$AWS_REGION" ]; then
         print_success "Region ${AWS_REGION} is available (${REGION_CHECK})"
         
         # Test actual access to the region
-        if aws ec2 describe-vpcs --region ${AWS_REGION} --max-results 1 &> /dev/null; then
+        if aws ec2 describe-vpcs --region ${AWS_REGION} --max-results 5 &> /dev/null; then
             print_success "Verified access to ${AWS_REGION}"
         else
             print_warning "Region is enabled but cannot access resources"
@@ -162,7 +162,7 @@ else
         ((PERM_ERRORS++))
     fi
     
-    if ! aws ec2 describe-vpcs --max-results 1 --region ${AWS_REGION} &> /dev/null; then
+    if ! aws ec2 describe-vpcs --max-results 5 --region ${AWS_REGION} &> /dev/null; then
         print_warning "Cannot describe VPCs - you may not have EC2 permissions in ${AWS_REGION}"
         print_warning "Note: If ${AWS_REGION} is not enabled in your account, this is expected"
         ((WARNINGS++))
