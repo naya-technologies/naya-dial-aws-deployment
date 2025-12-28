@@ -58,7 +58,7 @@ Resources:
       DBClusterIdentifier: !Sub 'dial-db-${AWS::AccountId}'
       Engine: aurora-postgresql
       EngineMode: provisioned
-      EngineVersion: '15.5'
+      EngineVersion: '15.8'
       DatabaseName: !Ref DBName
       MasterUsername: !Ref DBMasterUsername
       MasterUserPassword: !Ref DBMasterPassword
