@@ -72,7 +72,7 @@ Resources:
     Type: AWS::Cognito::UserPoolDomain
     DependsOn: UserPool
     Properties:
-      Domain: !Sub '${AWS::StackName}-users-${AWS::AccountId}'
+      Domain: !Sub 'dial-users-${AWS::AccountId}'
       UserPoolId: !Ref UserPool
 
   ChatAppClient:
@@ -158,7 +158,7 @@ Resources:
     Type: AWS::Cognito::UserPoolDomain
     DependsOn: AdminUserPool
     Properties:
-      Domain: !Sub '${AWS::StackName}-admin-${AWS::AccountId}'
+      Domain: !Sub 'dial-admin-${AWS::AccountId}'
       UserPoolId: !Ref AdminUserPool
 
   AdminAppClient:
