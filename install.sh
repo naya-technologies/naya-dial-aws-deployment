@@ -260,6 +260,10 @@ PARAMS="${PARAMS} ParameterKey=PublicSubnet1Cidr,ParameterValue=${PUBLIC_SUBNET_
 PARAMS="${PARAMS} ParameterKey=PublicSubnet2Cidr,ParameterValue=${PUBLIC_SUBNET_2_CIDR:-10.0.2.0/24}"
 PARAMS="${PARAMS} ParameterKey=PrivateSubnet1Cidr,ParameterValue=${PRIVATE_SUBNET_1_CIDR:-10.0.10.0/24}"
 PARAMS="${PARAMS} ParameterKey=PrivateSubnet2Cidr,ParameterValue=${PRIVATE_SUBNET_2_CIDR:-10.0.11.0/24}"
+PARAMS="${PARAMS} ParameterKey=EKSNodeInstanceType,ParameterValue=${EKS_NODE_INSTANCE_TYPE:-m5.large}"
+PARAMS="${PARAMS} ParameterKey=EKSNodeMinSize,ParameterValue=${EKS_NODE_MIN_SIZE:-2}"
+PARAMS="${PARAMS} ParameterKey=EKSNodeMaxSize,ParameterValue=${EKS_NODE_MAX_SIZE:-10}"
+PARAMS="${PARAMS} ParameterKey=EKSNodeDesiredSize,ParameterValue=${EKS_NODE_DESIRED_SIZE:-3}"
 
 if [ "$CERTIFICATE_OPTION" == "existing" ] && [ -n "$EXISTING_CERTIFICATE_ARN" ]; then
     PARAMS="${PARAMS} ParameterKey=ExistingCertificateArn,ParameterValue=${EXISTING_CERTIFICATE_ARN}"

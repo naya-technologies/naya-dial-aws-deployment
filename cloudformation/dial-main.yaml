@@ -29,6 +29,26 @@ Parameters:
     Default: '1.31'
     Description: Kubernetes version
   
+  EKSNodeInstanceType:
+    Type: String
+    Default: 'm5.large'
+    Description: EC2 instance type for EKS nodes
+  
+  EKSNodeMinSize:
+    Type: Number
+    Default: 2
+    Description: Minimum number of EKS nodes
+  
+  EKSNodeMaxSize:
+    Type: Number
+    Default: 10
+    Description: Maximum number of EKS nodes
+  
+  EKSNodeDesiredSize:
+    Type: Number
+    Default: 3
+    Description: Desired number of EKS nodes
+  
   # Database Configuration
   DBMasterUsername:
     Type: String
@@ -129,6 +149,10 @@ Resources:
         PrivateSubnet1Id: !GetAtt VPCStack.Outputs.PrivateSubnet1Id
         PrivateSubnet2Id: !GetAtt VPCStack.Outputs.PrivateSubnet2Id
         EKSSecurityGroupId: !GetAtt VPCStack.Outputs.EKSSecurityGroupId
+        NodeInstanceType: !Ref EKSNodeInstanceType
+        NodeMinSize: !Ref EKSNodeMinSize
+        NodeMaxSize: !Ref EKSNodeMaxSize
+        NodeDesiredSize: !Ref EKSNodeDesiredSize
 
   # IAM Roles for IRSA
   IAMStack:

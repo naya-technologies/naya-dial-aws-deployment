@@ -20,6 +20,26 @@ Parameters:
   
   EKSSecurityGroupId:
     Type: String
+  
+  NodeInstanceType:
+    Type: String
+    Default: 'm5.large'
+    Description: EC2 instance type for EKS nodes
+  
+  NodeMinSize:
+    Type: Number
+    Default: 2
+    Description: Minimum number of nodes
+  
+  NodeMaxSize:
+    Type: Number
+    Default: 10
+    Description: Maximum number of nodes
+  
+  NodeDesiredSize:
+    Type: Number
+    Default: 3
+    Description: Desired number of nodes
 
 Resources:
   # EKS Cluster IAM Role
@@ -101,11 +121,11 @@ Resources:
         - !Ref PrivateSubnet1Id
         - !Ref PrivateSubnet2Id
       ScalingConfig:
-        MinSize: 2
-        MaxSize: 10
-        DesiredSize: 3
+        MinSize: !Ref NodeMinSize
+        MaxSize: !Ref NodeMaxSize
+        DesiredSize: !Ref NodeDesiredSize
       InstanceTypes:
-        - m5.large
+        - !Ref NodeInstanceType
       AmiType: AL2_x86_64
       DiskSize: 100
       Tags:
