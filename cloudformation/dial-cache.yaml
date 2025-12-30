@@ -77,7 +77,7 @@ Resources:
     Type: AWS::ElastiCache::ServerlessCache
     DependsOn: RedisUserGroup
     Properties:
-      ServerlessCacheName: !Sub '${AWS::StackName}-redis'
+      ServerlessCacheName: !Sub 'dial-cache-${AWS::AccountId}'
       Engine: redis
       Description: DIAL Redis Serverless Cache
       SecurityGroupIds:
