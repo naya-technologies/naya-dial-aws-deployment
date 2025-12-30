@@ -168,5 +168,5 @@ print_header "Cleanup Complete"
 
 print_success "Cleanup completed successfully!"
 echo ""
-echo "You can now run: bash install.sh"
+echo "You can now run: bash deploy.sh"
 echo ""

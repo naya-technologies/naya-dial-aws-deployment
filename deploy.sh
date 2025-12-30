@@ -120,6 +120,27 @@ if [ "$ALLOW_SELF_REGISTRATION" == "yes" ]; then
     DISABLE_SELF_REG="false"
 fi
 
+# Show configuration and ask for confirmation
+echo ""
+echo "Configuration Summary:"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Stack Name:      ${STACK_NAME}"
+echo "Region:          ${AWS_REGION}"
+echo "Domain:          ${DOMAIN_NAME}"
+echo "EKS Cluster:     ${EKS_CLUSTER_NAME}"
+echo "EKS Instance:    ${EKS_NODE_INSTANCE_TYPE:-m5.large}"
+echo "EKS Nodes:       ${EKS_NODE_DESIRED_SIZE:-3} (min: ${EKS_NODE_MIN_SIZE:-2}, max: ${EKS_NODE_MAX_SIZE:-10})"
+echo "Certificate:     ${CERTIFICATE_OPTION}"
+echo "Self-Register:   ${ALLOW_SELF_REGISTRATION}"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+read -p "Continue with deployment? (yes/no): " confirm
+if [ "$confirm" != "yes" ]; then
+    print_warning "Deployment cancelled"
+    exit 0
+fi
+echo ""
+
 PARAMS="ParameterKey=DomainName,ParameterValue=${DOMAIN_NAME}"
 PARAMS="${PARAMS} ParameterKey=EKSClusterName,ParameterValue=${EKS_CLUSTER_NAME}"
 PARAMS="${PARAMS} ParameterKey=DBMasterPassword,ParameterValue=${DB_PASSWORD}"
@@ -191,8 +212,8 @@ echo -e "${BLUE}ℹ${NC} Stack Name: ${STACK_NAME}"
 echo -e "${BLUE}ℹ${NC} Region: ${AWS_REGION}"
 echo ""
 echo "Next steps:"
-echo "1. Run: ${GREEN}bash monitor.sh${NC} to track progress"
-echo "2. Or check AWS Console: CloudFormation → ${STACK_NAME}"
+echo -e "1. Run: ${GREEN}bash monitor.sh${NC} to track progress"
+echo -e "2. Or check AWS Console: CloudFormation → ${STACK_NAME}"
 echo ""
 echo "Expected deployment time: 25-35 minutes"
 echo ""
