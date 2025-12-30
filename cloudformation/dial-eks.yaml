@@ -126,6 +126,9 @@ Resources:
         DesiredSize: !Ref NodeDesiredSize
       InstanceTypes:
         - !Ref NodeInstanceType
+        - t3.large
+        - t3a.large
+        - m5a.large
       AmiType: AL2_x86_64
       DiskSize: 100
       Tags:

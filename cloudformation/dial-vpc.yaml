@@ -364,6 +364,19 @@ Resources:
       SecurityGroupIds:
         - !Ref VPCESecurityGroup
 
+  EKSEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.eks'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref VPCESecurityGroup
+
   # S3 Gateway Endpoint
   S3GatewayEndpoint:
     Type: AWS::EC2::VPCEndpoint
