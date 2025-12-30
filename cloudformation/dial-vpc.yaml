@@ -168,11 +168,25 @@ Resources:
   EKSSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Security group for EKS cluster (will be auto-generated, this is placeholder)
+      GroupDescription: Security group for EKS cluster and nodes
       VpcId: !Ref VPC
+      SecurityGroupIngress:
+        # Allow nodes to communicate with each other
+        - IpProtocol: -1
+          SourceSecurityGroupId: !Ref EKSSecurityGroup
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName}-eks-sg'
+
+  # Allow communication from ALB to EKS nodes (for ingress)
+  EKSSecurityGroupIngressFromALB:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref EKSSecurityGroup
+      IpProtocol: tcp
+      FromPort: 0
+      ToPort: 65535
+      SourceSecurityGroupId: !Ref ALBSecurityGroup
 
   RDSSecurityGroup:
     Type: AWS::EC2::SecurityGroup
