@@ -82,9 +82,101 @@ Resources:
         - Key: Name
           Value: !Sub '${ClusterName}-node-role'
 
+  # Wait for VPC Endpoints to be ready
+  WaitForEndpointsLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: DescribeVPCEndpoints
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeVpcEndpoints
+                Resource: '*'
+
+  WaitForEndpointsFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.handler
+      Role: !GetAtt WaitForEndpointsLambdaRole.Arn
+      Runtime: python3.11
+      Timeout: 300
+      Code:
+        ZipFile: |
+          import boto3
+          import cfnresponse
+          import time
+          
+          def handler(event, context):
+              try:
+                  if event['RequestType'] == 'Delete':
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+                      return
+                  
+                  ec2 = boto3.client('ec2')
+                  vpc_id = event['ResourceProperties']['VpcId']
+                  required_services = [
+                      'com.amazonaws.{}.ec2'.format(event['ResourceProperties']['Region']),
+                      'com.amazonaws.{}.ecr.api'.format(event['ResourceProperties']['Region']),
+                      'com.amazonaws.{}.ecr.dkr'.format(event['ResourceProperties']['Region']),
+                      'com.amazonaws.{}.s3'.format(event['ResourceProperties']['Region']),
+                      'com.amazonaws.{}.sts'.format(event['ResourceProperties']['Region']),
+                      'com.amazonaws.{}.eks'.format(event['ResourceProperties']['Region'])
+                  ]
+                  
+                  # Wait up to 5 minutes for endpoints to be available
+                  max_attempts = 30
+                  for attempt in range(max_attempts):
+                      response = ec2.describe_vpc_endpoints(
+                          Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}]
+                      )
+                      
+                      available_services = set()
+                      for endpoint in response['VpcEndpoints']:
+                          if endpoint['State'] == 'available':
+                              available_services.add(endpoint['ServiceName'])
+                      
+                      # Check if all required services are available
+                      missing = [s for s in required_services if s not in available_services]
+                      
+                      if not missing:
+                          cfnresponse.send(event, context, cfnresponse.SUCCESS, 
+                                          {'Message': 'All VPC Endpoints are available'})
+                          return
+                      
+                      if attempt < max_attempts - 1:
+                          time.sleep(10)  # Wait 10 seconds before retry
+                  
+                  # If we get here, not all endpoints are ready
+                  cfnresponse.send(event, context, cfnresponse.FAILED,
+                                  {'Message': 'VPC Endpoints not ready after 5 minutes'})
+              except Exception as e:
+                  print(f"Error: {str(e)}")
+                  cfnresponse.send(event, context, cfnresponse.FAILED,
+                                  {'Message': str(e)})
+
+  WaitForEndpoints:
+    Type: Custom::WaitForEndpoints
+    Properties:
+      ServiceToken: !GetAtt WaitForEndpointsFunction.Arn
+      VpcId: !Ref VPCId
+      Region: !Ref AWS::Region
+
   # EKS Cluster
   EKSCluster:
     Type: AWS::EKS::Cluster
+    DependsOn: WaitForEndpoints
     Properties:
       Name: !Ref ClusterName
       Version: !Ref KubernetesVersion
