@@ -121,6 +121,7 @@ echo "Configuration Summary:"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "Stack Name:      ${STACK_NAME}"
 echo "Region:          ${AWS_REGION}"
+echo "Domain:          ${DOMAIN_NAME}"
 echo "EKS Cluster:     ${EKS_CLUSTER_NAME}"
 echo "EKS Instance:    ${EKS_NODE_INSTANCE_TYPE:-m5.large}"
 echo "EKS Nodes:       ${EKS_NODE_DESIRED_SIZE:-3} (min: ${EKS_NODE_MIN_SIZE:-2}, max: ${EKS_NODE_MAX_SIZE:-10})"
@@ -134,7 +135,8 @@ if [ "$confirm" != "yes" ]; then
 fi
 echo ""
 
-PARAMS="ParameterKey=EKSClusterName,ParameterValue=${EKS_CLUSTER_NAME}"
+PARAMS="ParameterKey=DomainName,ParameterValue=${DOMAIN_NAME}"
+PARAMS="${PARAMS} ParameterKey=EKSClusterName,ParameterValue=${EKS_CLUSTER_NAME}"
 PARAMS="${PARAMS} ParameterKey=DBMasterPassword,ParameterValue=${DB_PASSWORD}"
 PARAMS="${PARAMS} ParameterKey=CognitoUserPoolName,ParameterValue=${COGNITO_USER_POOL_NAME}"
 PARAMS="${PARAMS} ParameterKey=CognitoAdminUserPoolName,ParameterValue=${COGNITO_ADMIN_USER_POOL_NAME:-dial-admins}"

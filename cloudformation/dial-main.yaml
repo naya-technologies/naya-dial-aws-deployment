@@ -2,6 +2,11 @@ AWSTemplateFormatVersion: '2010-09-09'
 Description: 'DIAL Marketplace Product - Main Stack'
 
 Parameters:
+  # Domain Configuration
+  DomainName:
+    Type: String
+    Description: Base domain name for DIAL deployment (e.g., example.com) - needed for Helm deployment
+  
   # EKS Configuration
   EKSClusterName:
     Type: String
@@ -89,8 +94,6 @@ Parameters:
   PrivateSubnet2Cidr:
     Type: String
     Default: '10.0.11.0/24'
-
-Conditions:
 
 Resources:
   # VPC and Networking
@@ -196,6 +199,12 @@ Resources:
         RestrictPublicBuckets: true
 
 Outputs:
+  DomainName:
+    Description: Domain name for DIAL deployment (for Helm)
+    Value: !Ref DomainName
+    Export:
+      Name: !Sub '${AWS::StackName}-DomainName'
+  
   VPCId:
     Description: VPC ID
     Value: !GetAtt VPCStack.Outputs.VPCId
