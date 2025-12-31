@@ -110,11 +110,6 @@ print_info "Stack Name: ${STACK_NAME}"
 print_info "Region: ${AWS_REGION}"
 
 # Build parameters
-CREATE_CERT="true"
-if [ "$CERTIFICATE_OPTION" == "existing" ]; then
-    CREATE_CERT="false"
-fi
-
 DISABLE_SELF_REG="true"
 if [ "$ALLOW_SELF_REGISTRATION" == "yes" ]; then
     DISABLE_SELF_REG="false"
@@ -126,11 +121,9 @@ echo "Configuration Summary:"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "Stack Name:      ${STACK_NAME}"
 echo "Region:          ${AWS_REGION}"
-echo "Domain:          ${DOMAIN_NAME}"
 echo "EKS Cluster:     ${EKS_CLUSTER_NAME}"
 echo "EKS Instance:    ${EKS_NODE_INSTANCE_TYPE:-m5.large}"
 echo "EKS Nodes:       ${EKS_NODE_DESIRED_SIZE:-3} (min: ${EKS_NODE_MIN_SIZE:-2}, max: ${EKS_NODE_MAX_SIZE:-10})"
-echo "Certificate:     ${CERTIFICATE_OPTION}"
 echo "Self-Register:   ${ALLOW_SELF_REGISTRATION}"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
@@ -141,10 +134,8 @@ if [ "$confirm" != "yes" ]; then
 fi
 echo ""
 
-PARAMS="ParameterKey=DomainName,ParameterValue=${DOMAIN_NAME}"
-PARAMS="${PARAMS} ParameterKey=EKSClusterName,ParameterValue=${EKS_CLUSTER_NAME}"
+PARAMS="ParameterKey=EKSClusterName,ParameterValue=${EKS_CLUSTER_NAME}"
 PARAMS="${PARAMS} ParameterKey=DBMasterPassword,ParameterValue=${DB_PASSWORD}"
-PARAMS="${PARAMS} ParameterKey=CreateACMCertificate,ParameterValue=${CREATE_CERT}"
 PARAMS="${PARAMS} ParameterKey=CognitoUserPoolName,ParameterValue=${COGNITO_USER_POOL_NAME}"
 PARAMS="${PARAMS} ParameterKey=CognitoAdminUserPoolName,ParameterValue=${COGNITO_ADMIN_USER_POOL_NAME:-dial-admins}"
 PARAMS="${PARAMS} ParameterKey=DisableSelfRegistration,ParameterValue=${DISABLE_SELF_REG}"
@@ -157,10 +148,6 @@ PARAMS="${PARAMS} ParameterKey=EKSNodeInstanceType,ParameterValue=${EKS_NODE_INS
 PARAMS="${PARAMS} ParameterKey=EKSNodeMinSize,ParameterValue=${EKS_NODE_MIN_SIZE:-2}"
 PARAMS="${PARAMS} ParameterKey=EKSNodeMaxSize,ParameterValue=${EKS_NODE_MAX_SIZE:-10}"
 PARAMS="${PARAMS} ParameterKey=EKSNodeDesiredSize,ParameterValue=${EKS_NODE_DESIRED_SIZE:-3}"
-
-if [ "$CERTIFICATE_OPTION" == "existing" ] && [ -n "$EXISTING_CERTIFICATE_ARN" ]; then
-    PARAMS="${PARAMS} ParameterKey=ExistingCertificateArn,ParameterValue=${EXISTING_CERTIFICATE_ARN}"
-fi
 
 # Check if stack exists
 if aws cloudformation describe-stacks --stack-name ${STACK_NAME} --region ${AWS_REGION} &> /dev/null; then
