@@ -50,7 +50,7 @@ In CloudShell, run these commands:
 
 ```bash
 # Download the installation package
-git clone https://github.com/YOUR-ORG/dial-aws-installation.git
+git clone https://github.com/naya-technologies/naya-dial-aws-deployment.git
 cd dial-aws-installation
 ```
 
@@ -58,7 +58,7 @@ cd dial-aws-installation
 
 ```bash
 # Edit the configuration file
-nano parameters.conf
+vi parameters.conf
 ```
 
 **Fill in these required values:**
@@ -67,14 +67,15 @@ nano parameters.conf
 - `ADMIN_EMAIL` - Your email address
 
 **Save the file:**
-- Press `Ctrl+X`
-- Press `Y` to confirm
+- Press `:`
+- Press `wq!` to confirm
 - Press `Enter`
 
 **Run the installation:**
 
 ```bash
-bash install.sh
+bash deploy.sh
+bash monitor.sh
 ```
 
 That's it! The script will:
@@ -91,7 +92,7 @@ That's it! The script will:
 
 ### What the Script Does
 
-The installation script automatically:
+The installation scripts automatically:
 
 1. **Validates** your configuration
 2. **Creates** an S3 bucket for templates
@@ -160,7 +161,7 @@ ALLOW_SELF_REGISTRATION="no"
 
 ## 🎯 After Installation
 
-After the `install.sh` script completes, you need to do a few manual steps:
+After the `deploy.sh` script completes, you need to do a few manual steps:
 
 ### 1. Install DIAL Application
 

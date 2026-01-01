@@ -11,7 +11,7 @@
 ```bash
 git clone https://github.com/YOUR-ORG/dial-aws-installation.git
 cd dial-aws-installation
-nano parameters.conf
+vi parameters.conf
 ```
 
 **Fill in:**
@@ -19,11 +19,12 @@ nano parameters.conf
 - `DB_PASSWORD` - Strong password (min 8 chars)
 - `ADMIN_EMAIL` - Your email
 
-Save: `Ctrl+X`, then `Y`, then `Enter`
+Save: `:`, then `wq!`, then `Enter`
 
 ### Step 3: Install
 ```bash
-bash install.sh
+bash deploy.sh
+bash monitor.sh
 ```
 
 ⏱️ Takes ~30 minutes (automated)

@@ -42,7 +42,8 @@ CERTIFICATE_OPTION="auto"
 
 1. **Run installation**
    ```bash
-   bash install.sh
+   bash deploy.sh
+   bash monitor.sh
    ```
 
 2. **Get validation DNS record**
