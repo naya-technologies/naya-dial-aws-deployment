@@ -266,45 +266,6 @@ Resources:
       SourceSecurityGroupId: !Ref ALBSecurityGroup
 
   # VPC Endpoints (Interface)
-  STSEndpoint:
-    Type: AWS::EC2::VPCEndpoint
-    Properties:
-      VpcId: !Ref VPC
-      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.sts'
-      VpcEndpointType: Interface
-      PrivateDnsEnabled: true
-      SubnetIds:
-        - !Ref PrivateSubnet1
-        - !Ref PrivateSubnet2
-      SecurityGroupIds:
-        - !Ref VPCESecurityGroup
-
-  ECRApiEndpoint:
-    Type: AWS::EC2::VPCEndpoint
-    Properties:
-      VpcId: !Ref VPC
-      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.ecr.api'
-      VpcEndpointType: Interface
-      PrivateDnsEnabled: true
-      SubnetIds:
-        - !Ref PrivateSubnet1
-        - !Ref PrivateSubnet2
-      SecurityGroupIds:
-        - !Ref VPCESecurityGroup
-
-  ECRDkrEndpoint:
-    Type: AWS::EC2::VPCEndpoint
-    Properties:
-      VpcId: !Ref VPC
-      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.ecr.dkr'
-      VpcEndpointType: Interface
-      PrivateDnsEnabled: true
-      SubnetIds:
-        - !Ref PrivateSubnet1
-        - !Ref PrivateSubnet2
-      SecurityGroupIds:
-        - !Ref VPCESecurityGroup
-
   LogsEndpoint:
     Type: AWS::EC2::VPCEndpoint
     Properties:
@@ -344,19 +305,6 @@ Resources:
       SecurityGroupIds:
         - !Ref VPCESecurityGroup
 
-  EC2Endpoint:
-    Type: AWS::EC2::VPCEndpoint
-    Properties:
-      VpcId: !Ref VPC
-      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.ec2'
-      VpcEndpointType: Interface
-      PrivateDnsEnabled: true
-      SubnetIds:
-        - !Ref PrivateSubnet1
-        - !Ref PrivateSubnet2
-      SecurityGroupIds:
-        - !Ref VPCESecurityGroup
-
   SecretsManagerEndpoint:
     Type: AWS::EC2::VPCEndpoint
     Properties:
@@ -383,28 +331,6 @@ Resources:
       SecurityGroupIds:
         - !Ref VPCESecurityGroup
 
-  EKSEndpoint:
-    Type: AWS::EC2::VPCEndpoint
-    Properties:
-      VpcId: !Ref VPC
-      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.eks'
-      VpcEndpointType: Interface
-      PrivateDnsEnabled: true
-      SubnetIds:
-        - !Ref PrivateSubnet1
-        - !Ref PrivateSubnet2
-      SecurityGroupIds:
-        - !Ref VPCESecurityGroup
-
-  # S3 Gateway Endpoint
-  S3GatewayEndpoint:
-    Type: AWS::EC2::VPCEndpoint
-    Properties:
-      VpcId: !Ref VPC
-      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.s3'
-      VpcEndpointType: Gateway
-      RouteTableIds:
-        - !Ref PrivateRouteTable
 
 Outputs:
   VPCId:

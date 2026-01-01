@@ -8,7 +8,7 @@ Parameters:
   
   OIDCProviderUrl:
     Type: String
-    Description: OIDC Provider URL from EKS cluster
+    Description: OIDC Provider URL from EKS cluster (without https://)
   
   S3BucketName:
     Type: String
@@ -37,8 +37,8 @@ Resources:
             Action: 'sts:AssumeRoleWithWebIdentity'
             Condition:
               StringEquals:
-                !Sub '${OIDCProviderUrl}:sub': 'system:serviceaccount:dial:dial-core'
-                !Sub '${OIDCProviderUrl}:aud': 'sts.amazonaws.com'
+                Fn::Sub: '${OIDCProviderUrl}:sub'
+                StringLike: 'system:serviceaccount:dial:dial-core'
       ManagedPolicyArns:
         - 'arn:aws:iam::aws:policy/AmazonS3FullAccess'
       Policies:
@@ -70,19 +70,19 @@ Resources:
             Action: 'sts:AssumeRoleWithWebIdentity'
             Condition:
               StringEquals:
-                !Sub '${OIDCProviderUrl}:sub': 'system:serviceaccount:dial:dial-bedrock'
-                !Sub '${OIDCProviderUrl}:aud': 'sts.amazonaws.com'
+                Fn::Sub: '${OIDCProviderUrl}:sub'
+                StringLike: 'system:serviceaccount:dial:dial-bedrock'
       ManagedPolicyArns:
         - 'arn:aws:iam::aws:policy/AmazonBedrockFullAccess'
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName}-bedrock-service-role'
 
-  # ALB Controller Service Role
-  ALBControllerServiceRole:
+  # Assistant Service Role
+  AssistantServiceRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub '${AWS::StackName}-alb-controller-role'
+      RoleName: !Sub '${AWS::StackName}-assistant-service-role'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -92,199 +92,29 @@ Resources:
             Action: 'sts:AssumeRoleWithWebIdentity'
             Condition:
               StringEquals:
-                !Sub '${OIDCProviderUrl}:sub': 'system:serviceaccount:dial:aws-load-balancer-controller'
-                !Sub '${OIDCProviderUrl}:aud': 'sts.amazonaws.com'
-      Policies:
-        - PolicyName: ALBControllerPolicy
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - 'iam:CreateServiceLinkedRole'
-                Resource: '*'
-                Condition:
-                  StringEquals:
-                    'iam:AWSServiceName': elasticloadbalancing.amazonaws.com
-              - Effect: Allow
-                Action:
-                  - 'ec2:DescribeAccountAttributes'
-                  - 'ec2:DescribeAddresses'
-                  - 'ec2:DescribeAvailabilityZones'
-                  - 'ec2:DescribeInternetGateways'
-                  - 'ec2:DescribeVpcs'
-                  - 'ec2:DescribeVpcPeeringConnections'
-                  - 'ec2:DescribeSubnets'
-                  - 'ec2:DescribeSecurityGroups'
-                  - 'ec2:DescribeInstances'
-                  - 'ec2:DescribeNetworkInterfaces'
-                  - 'ec2:DescribeTags'
-                  - 'ec2:GetCoipPoolUsage'
-                  - 'ec2:DescribeCoipPools'
-                  - 'elasticloadbalancing:DescribeLoadBalancers'
-                  - 'elasticloadbalancing:DescribeLoadBalancerAttributes'
-                  - 'elasticloadbalancing:DescribeListeners'
-                  - 'elasticloadbalancing:DescribeListenerCertificates'
-                  - 'elasticloadbalancing:DescribeSSLPolicies'
-                  - 'elasticloadbalancing:DescribeRules'
-                  - 'elasticloadbalancing:DescribeTargetGroups'
-                  - 'elasticloadbalancing:DescribeTargetGroupAttributes'
-                  - 'elasticloadbalancing:DescribeTargetHealth'
-                  - 'elasticloadbalancing:DescribeTags'
-                  - 'elasticloadbalancing:DescribeTrustStores'
-                Resource: '*'
-              - Effect: Allow
-                Action:
-                  - 'cognito-idp:DescribeUserPoolClient'
-                  - 'acm:ListCertificates'
-                  - 'acm:DescribeCertificate'
-                  - 'iam:ListServerCertificates'
-                  - 'iam:GetServerCertificate'
-                  - 'waf-regional:GetWebACL'
-                  - 'waf-regional:GetWebACLForResource'
-                  - 'waf-regional:AssociateWebACL'
-                  - 'waf-regional:DisassociateWebACL'
-                  - 'wafv2:GetWebACL'
-                  - 'wafv2:GetWebACLForResource'
-                  - 'wafv2:AssociateWebACL'
-                  - 'wafv2:DisassociateWebACL'
-                  - 'shield:GetSubscriptionState'
-                  - 'shield:DescribeProtection'
-                  - 'shield:CreateProtection'
-                  - 'shield:DeleteProtection'
-                Resource: '*'
-              - Effect: Allow
-                Action:
-                  - 'ec2:AuthorizeSecurityGroupIngress'
-                  - 'ec2:RevokeSecurityGroupIngress'
-                Resource: '*'
-              - Effect: Allow
-                Action:
-                  - 'ec2:CreateSecurityGroup'
-                Resource: '*'
-              - Effect: Allow
-                Action:
-                  - 'ec2:CreateTags'
-                Resource: 'arn:aws:ec2:*:*:security-group/*'
-                Condition:
-                  StringEquals:
-                    'ec2:CreateAction': CreateSecurityGroup
-                  'Null':
-                    'aws:RequestTag/elbv2.k8s.aws/cluster': 'false'
-              - Effect: Allow
-                Action:
-                  - 'ec2:CreateTags'
-                  - 'ec2:DeleteTags'
-                Resource: 'arn:aws:ec2:*:*:security-group/*'
-                Condition:
-                  'Null':
-                    'aws:RequestTag/elbv2.k8s.aws/cluster': 'true'
-                    'aws:ResourceTag/elbv2.k8s.aws/cluster': 'false'
-              - Effect: Allow
-                Action:
-                  - 'ec2:AuthorizeSecurityGroupIngress'
-                  - 'ec2:RevokeSecurityGroupIngress'
-                  - 'ec2:DeleteSecurityGroup'
-                Resource: '*'
-                Condition:
-                  'Null':
-                    'aws:ResourceTag/elbv2.k8s.aws/cluster': 'false'
-              - Effect: Allow
-                Action:
-                  - 'elasticloadbalancing:CreateLoadBalancer'
-                  - 'elasticloadbalancing:CreateTargetGroup'
-                Resource: '*'
-                Condition:
-                  'Null':
-                    'aws:RequestTag/elbv2.k8s.aws/cluster': 'false'
-              - Effect: Allow
-                Action:
-                  - 'elasticloadbalancing:CreateListener'
-                  - 'elasticloadbalancing:DeleteListener'
-                  - 'elasticloadbalancing:CreateRule'
-                  - 'elasticloadbalancing:DeleteRule'
-                Resource: '*'
-              - Effect: Allow
-                Action:
-                  - 'elasticloadbalancing:AddTags'
-                  - 'elasticloadbalancing:RemoveTags'
-                Resource:
-                  - 'arn:aws:elasticloadbalancing:*:*:targetgroup/*/*'
-                  - 'arn:aws:elasticloadbalancing:*:*:loadbalancer/net/*/*'
-                  - 'arn:aws:elasticloadbalancing:*:*:loadbalancer/app/*/*'
-                Condition:
-                  'Null':
-                    'aws:RequestTag/elbv2.k8s.aws/cluster': 'true'
-                    'aws:ResourceTag/elbv2.k8s.aws/cluster': 'false'
-              - Effect: Allow
-                Action:
-                  - 'elasticloadbalancing:AddTags'
-                  - 'elasticloadbalancing:RemoveTags'
-                Resource:
-                  - 'arn:aws:elasticloadbalancing:*:*:listener/net/*/*/*'
-                  - 'arn:aws:elasticloadbalancing:*:*:listener/app/*/*/*'
-                  - 'arn:aws:elasticloadbalancing:*:*:listener-rule/net/*/*/*'
-                  - 'arn:aws:elasticloadbalancing:*:*:listener-rule/app/*/*/*'
-              - Effect: Allow
-                Action:
-                  - 'elasticloadbalancing:ModifyLoadBalancerAttributes'
-                  - 'elasticloadbalancing:SetIpAddressType'
-                  - 'elasticloadbalancing:SetSecurityGroups'
-                  - 'elasticloadbalancing:SetSubnets'
-                  - 'elasticloadbalancing:DeleteLoadBalancer'
-                  - 'elasticloadbalancing:ModifyTargetGroup'
-                  - 'elasticloadbalancing:ModifyTargetGroupAttributes'
-                  - 'elasticloadbalancing:DeleteTargetGroup'
-                Resource: '*'
-                Condition:
-                  'Null':
-                    'aws:ResourceTag/elbv2.k8s.aws/cluster': 'false'
-              - Effect: Allow
-                Action:
-                  - 'elasticloadbalancing:AddTags'
-                Resource:
-                  - 'arn:aws:elasticloadbalancing:*:*:targetgroup/*/*'
-                  - 'arn:aws:elasticloadbalancing:*:*:loadbalancer/net/*/*'
-                  - 'arn:aws:elasticloadbalancing:*:*:loadbalancer/app/*/*'
-                Condition:
-                  StringEquals:
-                    'elasticloadbalancing:CreateAction':
-                      - CreateTargetGroup
-                      - CreateLoadBalancer
-                  'Null':
-                    'aws:RequestTag/elbv2.k8s.aws/cluster': 'false'
-              - Effect: Allow
-                Action:
-                  - 'elasticloadbalancing:RegisterTargets'
-                  - 'elasticloadbalancing:DeregisterTargets'
-                Resource: 'arn:aws:elasticloadbalancing:*:*:targetgroup/*/*'
-              - Effect: Allow
-                Action:
-                  - 'elasticloadbalancing:SetWebAcl'
-                  - 'elasticloadbalancing:ModifyListener'
-                  - 'elasticloadbalancing:AddListenerCertificates'
-                  - 'elasticloadbalancing:RemoveListenerCertificates'
-                  - 'elasticloadbalancing:ModifyRule'
-                Resource: '*'
+                Fn::Sub: '${OIDCProviderUrl}:sub'
+                StringLike: 'system:serviceaccount:dial:dial-assistant'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonBedrockFullAccess'
       Tags:
         - Key: Name
-          Value: !Sub '${AWS::StackName}-alb-controller-role'
+          Value: !Sub '${AWS::StackName}-assistant-service-role'
 
 Outputs:
-  CoreRoleArn:
-    Description: Core Service IAM Role ARN
+  CoreServiceRoleArn:
+    Description: Core Service Role ARN
     Value: !GetAtt CoreServiceRole.Arn
     Export:
-      Name: !Sub '${AWS::StackName}-CoreRoleArn'
-
-  BedrockRoleArn:
-    Description: Bedrock Service IAM Role ARN
+      Name: !Sub '${AWS::StackName}-CoreServiceRoleArn'
+  
+  BedrockServiceRoleArn:
+    Description: Bedrock Service Role ARN
     Value: !GetAtt BedrockServiceRole.Arn
     Export:
-      Name: !Sub '${AWS::StackName}-BedrockRoleArn'
-
-  ALBControllerRoleArn:
-    Description: ALB Controller IAM Role ARN
-    Value: !GetAtt ALBControllerServiceRole.Arn
+      Name: !Sub '${AWS::StackName}-BedrockServiceRoleArn'
+  
+  AssistantServiceRoleArn:
+    Description: Assistant Service Role ARN
+    Value: !GetAtt AssistantServiceRole.Arn
     Export:
-      Name: !Sub '${AWS::StackName}-ALBControllerRoleArn'
+      Name: !Sub '${AWS::StackName}-AssistantServiceRoleArn'
