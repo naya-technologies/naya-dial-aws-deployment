@@ -106,13 +106,13 @@ That's it! The script will:
 bash post-deploy.sh
 ```
 
-==========================================
+---  
 ✅ DIAL Deployment Complete!"
-==========================================
 
-Files created:
-  📄 deployment-outputs.env  - Infrastructure outputs
-  📄 helm-values.yaml        - Helm values used
+
+Files created:  
+  📄 deployment-outputs.env  - Infrastructure outputs  
+  📄 helm-values.yaml        - Helm values used  
 
 ⚠️  FINAL STEPS:
   1. Add the 3 DNS records shown above
