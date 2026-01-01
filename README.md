@@ -108,7 +108,7 @@ That's it! The script will:
 bash post-deploy.sh
 ```
  
-=== ✅ DIAL Deployment Complete!"
+✅ DIAL Deployment Complete!"
 
 
 Files created:  
