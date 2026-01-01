@@ -100,14 +100,15 @@ That's it! The script will:
 
 **This takes about 30 minutes** - grab a coffee! ☕
 
+--- 
+
 **Deploy DIAL platoform**
 ```bash
 # Deploy components and LBs of DIAL
 bash post-deploy.sh
 ```
-
----  
-✅ DIAL Deployment Complete!"
+ 
+=== ✅ DIAL Deployment Complete!"
 
 
 Files created:  
