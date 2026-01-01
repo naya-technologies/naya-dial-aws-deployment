@@ -29,7 +29,8 @@ Before you begin, make sure you have:
 1. ✅ **AWS Account** with admin permissions
 2. ✅ **Domain name** (you'll need to configure DNS records)
 3. ✅ **Email address** for admin account
-4. ✅ **10 minutes** of your time
+5. ✅ **10 minutes** of your time
+
 
 **That's it!** Everything else is automated.
 
@@ -71,6 +72,19 @@ vi parameters.conf
 - Press `wq!` to confirm
 - Press `Enter`
 
+**Generate ACM record**
+```bash
+# Generate Certificate Request
+bash create-certificate.sh
+```
+
+Add DNS records to approve request in DNS  
+
+```bash
+# Validate certificates approved
+bash verify-certificate.sh
+```  
+
 **Run the installation:**
 
 ```bash
@@ -85,6 +99,34 @@ That's it! The script will:
 - ✅ Generate configuration files
 
 **This takes about 30 minutes** - grab a coffee! ☕
+
+**Deploy DIAL platoform**
+```bash
+# Deploy components and LBs of DIAL
+bash post-deploy.sh
+```
+
+==========================================
+✅ DIAL Deployment Complete!"
+==========================================
+
+Files created:
+  📄 deployment-outputs.env  - Infrastructure outputs
+  📄 helm-values.yaml        - Helm values used
+
+⚠️  FINAL STEPS:
+  1. Add the 3 DNS records shown above
+  2. Wait 5-30 minutes for DNS propagation
+  3. Access DIAL:
+     - Chat:  https://chat.${DOMAIN_NAME}"
+     - Admin: https://admin.${DOMAIN_NAME}"
+
+🔍 Verify deployment:
+  kubectl get pods -n dial
+  kubectl get ingress -n dial
+
+⚠️  SECURITY: Keep deployment-outputs.env and helm-values.yaml secure!
+   They contain passwords and secrets.
 
 ---
 
