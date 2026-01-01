@@ -65,9 +65,9 @@ Resources:
         - 'arn:aws:iam::aws:policy/AmazonBedrockFullAccess'
 
 Outputs:
-  CoreServiceRoleArn:
+  CoreRoleArn:
     Value: !GetAtt CoreServiceRole.Arn
-  BedrockServiceRoleArn:
+  BedrockRoleArn:
     Value: !GetAtt BedrockServiceRole.Arn
-  AssistantServiceRoleArn:
+  ALBControllerRoleArn:
     Value: !GetAtt AssistantServiceRole.Arn
