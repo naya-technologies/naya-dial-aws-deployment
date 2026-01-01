@@ -4,26 +4,16 @@ Description: 'DIAL IAM Roles for Service Accounts (IRSA)'
 Parameters:
   OIDCProviderArn:
     Type: String
-    Description: OIDC Provider ARN from EKS cluster
-  
   OIDCProviderUrl:
     Type: String
-    Description: OIDC Provider URL from EKS cluster (without https://)
-  
   S3BucketName:
     Type: String
-    Description: S3 bucket name for DIAL storage
-  
   RedisCacheArn:
     Type: String
-    Description: ElastiCache ARN
-  
   RedisUserArn:
     Type: String
-    Description: Redis User ARN
 
 Resources:
-  # Core Service Role
   CoreServiceRole:
     Type: AWS::IAM::Role
     Properties:
@@ -35,10 +25,6 @@ Resources:
             Principal:
               Federated: !Ref OIDCProviderArn
             Action: 'sts:AssumeRoleWithWebIdentity'
-            Condition:
-              StringEquals:
-                Fn::Sub: '${OIDCProviderUrl}:sub'
-                StringLike: 'system:serviceaccount:dial:dial-core'
       ManagedPolicyArns:
         - 'arn:aws:iam::aws:policy/AmazonS3FullAccess'
       Policies:
@@ -47,16 +33,9 @@ Resources:
             Version: '2012-10-17'
             Statement:
               - Effect: Allow
-                Action:
-                  - 'elasticache:Connect'
-                Resource:
-                  - !Ref RedisCacheArn
-                  - !Ref RedisUserArn
-      Tags:
-        - Key: Name
-          Value: !Sub '${AWS::StackName}-core-service-role'
+                Action: ['elasticache:Connect']
+                Resource: [!Ref RedisCacheArn, !Ref RedisUserArn]
 
-  # Bedrock Service Role
   BedrockServiceRole:
     Type: AWS::IAM::Role
     Properties:
@@ -68,17 +47,9 @@ Resources:
             Principal:
               Federated: !Ref OIDCProviderArn
             Action: 'sts:AssumeRoleWithWebIdentity'
-            Condition:
-              StringEquals:
-                Fn::Sub: '${OIDCProviderUrl}:sub'
-                StringLike: 'system:serviceaccount:dial:dial-bedrock'
       ManagedPolicyArns:
         - 'arn:aws:iam::aws:policy/AmazonBedrockFullAccess'
-      Tags:
-        - Key: Name
-          Value: !Sub '${AWS::StackName}-bedrock-service-role'
 
-  # Assistant Service Role
   AssistantServiceRole:
     Type: AWS::IAM::Role
     Properties:
@@ -90,31 +61,13 @@ Resources:
             Principal:
               Federated: !Ref OIDCProviderArn
             Action: 'sts:AssumeRoleWithWebIdentity'
-            Condition:
-              StringEquals:
-                Fn::Sub: '${OIDCProviderUrl}:sub'
-                StringLike: 'system:serviceaccount:dial:dial-assistant'
       ManagedPolicyArns:
         - 'arn:aws:iam::aws:policy/AmazonBedrockFullAccess'
-      Tags:
-        - Key: Name
-          Value: !Sub '${AWS::StackName}-assistant-service-role'
 
 Outputs:
   CoreServiceRoleArn:
-    Description: Core Service Role ARN
     Value: !GetAtt CoreServiceRole.Arn
-    Export:
-      Name: !Sub '${AWS::StackName}-CoreServiceRoleArn'
-  
   BedrockServiceRoleArn:
-    Description: Bedrock Service Role ARN
     Value: !GetAtt BedrockServiceRole.Arn
-    Export:
-      Name: !Sub '${AWS::StackName}-BedrockServiceRoleArn'
-  
   AssistantServiceRoleArn:
-    Description: Assistant Service Role ARN
     Value: !GetAtt AssistantServiceRole.Arn
-    Export:
-      Name: !Sub '${AWS::StackName}-AssistantServiceRoleArn'
