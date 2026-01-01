@@ -21,6 +21,10 @@ Parameters:
   EKSSecurityGroupId:
     Type: String
   
+  PrivateRouteTableId:
+    Type: String
+    Description: Private route table ID for S3 Gateway endpoint
+  
   NodeInstanceType:
     Type: String
     Default: 'm5.large'
@@ -42,6 +46,96 @@ Parameters:
     Description: Desired number of nodes
 
 Resources:
+  # VPC Endpoints Security Group
+  VPCESecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for VPC Endpoints (EKS requirements)
+      VpcId: !Ref VPCId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 10.0.0.0/8
+      Tags:
+        - Key: Name
+          Value: !Sub '${ClusterName}-vpce-sg'
+
+  # Required VPC Endpoints for EKS (air-gapped)
+  EC2Endpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPCId
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.ec2'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - !Ref PrivateSubnet1Id
+        - !Ref PrivateSubnet2Id
+      SecurityGroupIds:
+        - !Ref VPCESecurityGroup
+
+  ECRApiEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPCId
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.ecr.api'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - !Ref PrivateSubnet1Id
+        - !Ref PrivateSubnet2Id
+      SecurityGroupIds:
+        - !Ref VPCESecurityGroup
+
+  ECRDkrEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPCId
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.ecr.dkr'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - !Ref PrivateSubnet1Id
+        - !Ref PrivateSubnet2Id
+      SecurityGroupIds:
+        - !Ref VPCESecurityGroup
+
+  S3Endpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPCId
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.s3'
+      VpcEndpointType: Gateway
+      RouteTableIds:
+        - !Ref PrivateRouteTableId
+
+  STSEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPCId
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.sts'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - !Ref PrivateSubnet1Id
+        - !Ref PrivateSubnet2Id
+      SecurityGroupIds:
+        - !Ref VPCESecurityGroup
+
+  EKSVPCEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPCId
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.eks'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - !Ref PrivateSubnet1Id
+        - !Ref PrivateSubnet2Id
+      SecurityGroupIds:
+        - !Ref VPCESecurityGroup
+
   # EKS Cluster IAM Role
   EKSClusterRole:
     Type: AWS::IAM::Role
@@ -82,101 +176,16 @@ Resources:
         - Key: Name
           Value: !Sub '${ClusterName}-node-role'
 
-  # Wait for VPC Endpoints to be ready
-  WaitForEndpointsLambdaRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: lambda.amazonaws.com
-            Action: sts:AssumeRole
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-      Policies:
-        - PolicyName: DescribeVPCEndpoints
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - ec2:DescribeVpcEndpoints
-                Resource: '*'
-
-  WaitForEndpointsFunction:
-    Type: AWS::Lambda::Function
-    Properties:
-      Handler: index.handler
-      Role: !GetAtt WaitForEndpointsLambdaRole.Arn
-      Runtime: python3.11
-      Timeout: 300
-      Code:
-        ZipFile: |
-          import boto3
-          import cfnresponse
-          import time
-          
-          def handler(event, context):
-              try:
-                  if event['RequestType'] == 'Delete':
-                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
-                      return
-                  
-                  ec2 = boto3.client('ec2')
-                  vpc_id = event['ResourceProperties']['VpcId']
-                  required_services = [
-                      'com.amazonaws.{}.ec2'.format(event['ResourceProperties']['Region']),
-                      'com.amazonaws.{}.ecr.api'.format(event['ResourceProperties']['Region']),
-                      'com.amazonaws.{}.ecr.dkr'.format(event['ResourceProperties']['Region']),
-                      'com.amazonaws.{}.s3'.format(event['ResourceProperties']['Region']),
-                      'com.amazonaws.{}.sts'.format(event['ResourceProperties']['Region']),
-                      'com.amazonaws.{}.eks'.format(event['ResourceProperties']['Region'])
-                  ]
-                  
-                  # Wait up to 5 minutes for endpoints to be available
-                  max_attempts = 30
-                  for attempt in range(max_attempts):
-                      response = ec2.describe_vpc_endpoints(
-                          Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}]
-                      )
-                      
-                      available_services = set()
-                      for endpoint in response['VpcEndpoints']:
-                          if endpoint['State'] == 'available':
-                              available_services.add(endpoint['ServiceName'])
-                      
-                      # Check if all required services are available
-                      missing = [s for s in required_services if s not in available_services]
-                      
-                      if not missing:
-                          cfnresponse.send(event, context, cfnresponse.SUCCESS, 
-                                          {'Message': 'All VPC Endpoints are available'})
-                          return
-                      
-                      if attempt < max_attempts - 1:
-                          time.sleep(10)  # Wait 10 seconds before retry
-                  
-                  # If we get here, not all endpoints are ready
-                  cfnresponse.send(event, context, cfnresponse.FAILED,
-                                  {'Message': 'VPC Endpoints not ready after 5 minutes'})
-              except Exception as e:
-                  print(f"Error: {str(e)}")
-                  cfnresponse.send(event, context, cfnresponse.FAILED,
-                                  {'Message': str(e)})
-
-  WaitForEndpoints:
-    Type: Custom::WaitForEndpoints
-    Properties:
-      ServiceToken: !GetAtt WaitForEndpointsFunction.Arn
-      VpcId: !Ref VPCId
-      Region: !Ref AWS::Region
-
   # EKS Cluster
   EKSCluster:
     Type: AWS::EKS::Cluster
-    DependsOn: WaitForEndpoints
+    DependsOn:
+      - EC2Endpoint
+      - ECRApiEndpoint
+      - ECRDkrEndpoint
+      - S3Endpoint
+      - STSEndpoint
+      - EKSVPCEndpoint
     Properties:
       Name: !Ref ClusterName
       Version: !Ref KubernetesVersion

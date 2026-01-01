@@ -437,6 +437,10 @@ Outputs:
     Description: EKS Security Group ID
     Value: !Ref EKSSecurityGroup
 
+  PrivateRouteTableId:
+    Description: Private Route Table ID (for EKS S3 endpoint)
+    Value: !Ref PrivateRouteTable
+
   RDSSecurityGroupId:
     Description: RDS Security Group ID
     Value: !Ref RDSSecurityGroup
