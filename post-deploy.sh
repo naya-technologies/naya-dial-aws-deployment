@@ -12,6 +12,37 @@ echo "Stack: $STACK_NAME"
 echo "Region: $REGION"
 echo ""
 
+# Check and install kubectl if needed
+echo "🔍 Checking required tools..."
+echo ""
+
+if ! command -v kubectl &> /dev/null; then
+    echo "📦 kubectl not found - installing..."
+    curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+    chmod +x kubectl
+    sudo mv kubectl /usr/local/bin/ 2>/dev/null || mv kubectl ~/.local/bin/ 2>/dev/null || {
+        mkdir -p ~/bin
+        mv kubectl ~/bin/
+        export PATH="$HOME/bin:$PATH"
+    }
+    echo "✅ kubectl installed"
+else
+    KUBECTL_VERSION=$(kubectl version --client --short 2>/dev/null | head -1 || kubectl version --client 2>&1 | head -1)
+    echo "✅ kubectl found: $KUBECTL_VERSION"
+fi
+
+# Check and install helm if needed
+if ! command -v helm &> /dev/null; then
+    echo "📦 helm not found - installing..."
+    curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+    echo "✅ helm installed"
+else
+    HELM_VERSION=$(helm version --short 2>/dev/null || echo "unknown version")
+    echo "✅ helm found: $HELM_VERSION"
+fi
+
+echo ""
+
 # Get all outputs from CloudFormation
 echo "📋 Collecting CloudFormation outputs..."
 OUTPUTS=$(aws cloudformation describe-stacks \
@@ -31,8 +62,8 @@ DB_ENDPOINT=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="RDSEndpoint") |
 DB_PORT=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="RDSPort") | .OutputValue')
 COGNITO_POOL_ID=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="CognitoUserPoolId") | .OutputValue')
 COGNITO_CLIENT_ID=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="CognitoClientId") | .OutputValue')
-COGNITO_ADMIN_POOL_ID=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="CognitoAdminUserPoolId") | .OutputValue')
-COGNITO_ADMIN_CLIENT_ID=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="CognitoAdminClientId") | .OutputValue')
+COGNITO_ADMIN_POOL_ID=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="AdminCognitoUserPoolId") | .OutputValue')
+COGNITO_ADMIN_CLIENT_ID=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="AdminCognitoClientId") | .OutputValue')
 CORE_ROLE_ARN=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="CoreRoleArn") | .OutputValue')
 BEDROCK_ROLE_ARN=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="BedrockRoleArn") | .OutputValue')
 ALB_CONTROLLER_ROLE_ARN=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="ALBControllerRoleArn") | .OutputValue')
@@ -164,7 +195,6 @@ echo "✅ Saved to: deployment-outputs.env"
 echo ""
 echo "📝 Generating Helm values file..."
 
-# Note: You'll need to create ACM certificate manually
 # Get ACM certificate ARN from parameters.conf
 ACM_CERTIFICATE_ARN=$(grep "^ACM_CERTIFICATE_ARN=" parameters.conf | cut -d'=' -f2- | tr -d '"')
 if [ -z "$ACM_CERTIFICATE_ARN" ]; then
@@ -347,7 +377,13 @@ echo "=========================================="
 echo "📚 Adding DIAL Helm repository..."
 echo "=========================================="
 
-helm repo add epam https://charts.epam.com 2>/dev/null || echo "Repository already exists"
+# Remove repo if exists to avoid conflicts
+helm repo remove epam 2>/dev/null || true
+
+# Add repo
+helm repo add epam https://charts.epam.com
+
+# Update
 helm repo update
 
 echo "✅ Helm repository ready"
@@ -446,4 +482,3 @@ echo ""
 echo "⚠️  SECURITY: Keep deployment-outputs.env and helm-values.yaml secure!"
 echo "   They contain passwords and secrets."
 echo ""
-
