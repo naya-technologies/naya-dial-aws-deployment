@@ -78,13 +78,6 @@ ALB_SG=$(aws ec2 describe-security-groups \
     --query 'SecurityGroups[0].GroupId' \
     --output text)
 
-# Get Cognito Domain
-COGNITO_DOMAIN=$(aws cognito-idp describe-user-pool \
-    --user-pool-id "$COGNITO_POOL_ID" \
-    --region "$REGION" \
-    --query 'UserPool.Domain' \
-    --output text 2>/dev/null || echo "")
-
 # Get Cognito Client Secret
 COGNITO_CLIENT_SECRET=$(aws cognito-idp describe-user-pool-client \
     --user-pool-id "$COGNITO_POOL_ID" \
@@ -203,146 +196,184 @@ if [ -z "$ACM_CERTIFICATE_ARN" ]; then
     exit 1
 fi
 
-cat > helm-values.yaml << EOF
-# DIAL Helm Values
-# Auto-generated from CloudFormation deployment
-# Generated: $(date)
+# Export all variables for Python
+export REGION VPC_ID EKS_CLUSTER_NAME ALB_CONTROLLER_ROLE_ARN CORE_ROLE_ARN
+export DOMAIN_NAME ALB_SG ACM_CERTIFICATE_ARN CORE_ENCRYPTION_KEY CORE_ENCRYPTION_SECRET
+export S3_BUCKET REDIS_ENDPOINT REDIS_USER_ID REDIS_CLUSTER COGNITO_JWKS_URL COGNITO_LOGGING_SALT
+export COGNITO_HOST COGNITO_CLIENT_ID COGNITO_CLIENT_SECRET CHAT_NEXTAUTH_SECRET DIAL_API_KEY
+export BEDROCK_ROLE_ARN DB_ENDPOINT DB_PORT DB_NAME DB_USER DB_PASSWORD
+export COGNITO_ADMIN_HOST COGNITO_ADMIN_CLIENT_ID COGNITO_ADMIN_CLIENT_SECRET ADMIN_NEXTAUTH_SECRET
 
-global:
-  region: ${REGION}
+# Create helm values using Python to avoid YAML issues
+python3 << 'PYEOF'
+import yaml
+import os
 
-albcontroller:
-  enabled: true
-  clusterName: ${EKS_CLUSTER_NAME}
-  region: ${REGION}
-  vpcId: ${VPC_ID}
-  serviceAccount:
-    create: true
-    name: aws-load-balancer-controller
-    annotations:
-      eks.amazonaws.com/role-arn: ${ALB_CONTROLLER_ROLE_ARN}
+helm_values = {
+    'global': {
+        'region': os.environ['REGION']
+    },
+    'albcontroller': {
+        'enabled': True,
+        'clusterName': os.environ['EKS_CLUSTER_NAME'],
+        'region': os.environ['REGION'],
+        'vpcId': os.environ['VPC_ID'],
+        'serviceAccount': {
+            'create': True,
+            'name': 'aws-load-balancer-controller',
+            'annotations': {
+                'eks.amazonaws.com/role-arn': os.environ['ALB_CONTROLLER_ROLE_ARN']
+            }
+        }
+    },
+    'dial': {
+        'core': {
+            'serviceAccount': {
+                'create': True,
+                'name': 'dial-core',
+                'annotations': {
+                    'eks.amazonaws.com/role-arn': os.environ['CORE_ROLE_ARN']
+                }
+            },
+            'ingress': {
+                'enabled': True,
+                'className': 'alb',
+                'hosts': ['chat.' + os.environ['DOMAIN_NAME']],
+                'annotations': {
+                    'alb.ingress.kubernetes.io/scheme': 'internet-facing',
+                    'alb.ingress.kubernetes.io/target-type': 'ip',
+                    'alb.ingress.kubernetes.io/security-groups': os.environ['ALB_SG'],
+                    'alb.ingress.kubernetes.io/certificate-arn': os.environ['ACM_CERTIFICATE_ARN'],
+                    'alb.ingress.kubernetes.io/listen-ports': '[{"HTTP": 80}, {"HTTPS": 443}]',
+                    'alb.ingress.kubernetes.io/ssl-redirect': '443'
+                }
+            },
+            'configuration': {
+                'encryption': {
+                    'key': os.environ['CORE_ENCRYPTION_KEY'],
+                    'secret': os.environ['CORE_ENCRYPTION_SECRET']
+                }
+            },
+            'env': {
+                'aidial': {
+                    'storage': {
+                        'bucket': os.environ['S3_BUCKET']
+                    },
+                    'redis': {
+                        'singleServerConfig': {
+                            'address': 'redis://' + os.environ['REDIS_ENDPOINT']
+                        },
+                        'provider': {
+                            'userId': os.environ['REDIS_USER_ID'],
+                            'clusterName': os.environ['REDIS_CLUSTER']
+                        }
+                    },
+                    'identityProviders': {
+                        'cognito': {
+                            'jwksUrl': os.environ['COGNITO_JWKS_URL']
+                        }
+                    }
+                }
+            },
+            'secrets': {
+                'aidial': {
+                    'identityProviders': {
+                        'cognito': {
+                            'loggingSalt': os.environ['COGNITO_LOGGING_SALT']
+                        }
+                    }
+                }
+            }
+        },
+        'chat': {
+            'ingress': {
+                'enabled': True,
+                'className': 'alb',
+                'hosts': ['chat.' + os.environ['DOMAIN_NAME']],
+                'annotations': {
+                    'alb.ingress.kubernetes.io/scheme': 'internet-facing',
+                    'alb.ingress.kubernetes.io/target-type': 'ip',
+                    'alb.ingress.kubernetes.io/security-groups': os.environ['ALB_SG'],
+                    'alb.ingress.kubernetes.io/certificate-arn': os.environ['ACM_CERTIFICATE_ARN'],
+                    'alb.ingress.kubernetes.io/listen-ports': '[{"HTTP": 80}, {"HTTPS": 443}]',
+                    'alb.ingress.kubernetes.io/ssl-redirect': '443'
+                }
+            },
+            'env': {
+                'NEXTAUTH_URL': 'https://chat.' + os.environ['DOMAIN_NAME'],
+                'THEMES_CONFIG_HOST': 'https://themes.' + os.environ['DOMAIN_NAME']
+            },
+            'secrets': {
+                'AUTH_COGNITO_HOST': os.environ['COGNITO_HOST'],
+                'AUTH_COGNITO_CLIENT_ID': os.environ['COGNITO_CLIENT_ID'],
+                'AUTH_COGNITO_SECRET': os.environ['COGNITO_CLIENT_SECRET'],
+                'NEXTAUTH_SECRET': os.environ['CHAT_NEXTAUTH_SECRET'],
+                'DIAL_API_KEY': os.environ['DIAL_API_KEY']
+            }
+        },
+        'themes': {
+            'ingress': {
+                'enabled': True,
+                'className': 'alb',
+                'hosts': ['themes.' + os.environ['DOMAIN_NAME']],
+                'annotations': {
+                    'alb.ingress.kubernetes.io/scheme': 'internet-facing',
+                    'alb.ingress.kubernetes.io/target-type': 'ip',
+                    'alb.ingress.kubernetes.io/security-groups': os.environ['ALB_SG'],
+                    'alb.ingress.kubernetes.io/certificate-arn': os.environ['ACM_CERTIFICATE_ARN']
+                }
+            }
+        },
+        'bedrock': {
+            'serviceAccount': {
+                'create': True,
+                'name': 'dial-bedrock',
+                'annotations': {
+                    'eks.amazonaws.com/role-arn': os.environ['BEDROCK_ROLE_ARN']
+                }
+            }
+        }
+    },
+    'dialadmin': {
+        'backend': {
+            'externalDatabase': {
+                'enabled': True,
+                'host': os.environ['DB_ENDPOINT'],
+                'port': int(os.environ['DB_PORT']),
+                'database': os.environ['DB_NAME'],
+                'user': os.environ['DB_USER'],
+                'password': os.environ['DB_PASSWORD']
+            }
+        },
+        'frontend': {
+            'ingress': {
+                'enabled': True,
+                'className': 'alb',
+                'hosts': ['admin.' + os.environ['DOMAIN_NAME']],
+                'annotations': {
+                    'alb.ingress.kubernetes.io/scheme': 'internet-facing',
+                    'alb.ingress.kubernetes.io/target-type': 'ip',
+                    'alb.ingress.kubernetes.io/security-groups': os.environ['ALB_SG'],
+                    'alb.ingress.kubernetes.io/certificate-arn': os.environ['ACM_CERTIFICATE_ARN']
+                }
+            },
+            'env': {
+                'NEXTAUTH_URL': 'https://admin.' + os.environ['DOMAIN_NAME'],
+                'AUTH_COGNITO_HOST': os.environ['COGNITO_ADMIN_HOST'],
+                'AUTH_COGNITO_CLIENT_ID': os.environ['COGNITO_ADMIN_CLIENT_ID']
+            },
+            'secrets': {
+                'AUTH_COGNITO_SECRET': os.environ['COGNITO_ADMIN_CLIENT_SECRET'],
+                'NEXTAUTH_SECRET': os.environ['ADMIN_NEXTAUTH_SECRET']
+            }
+        }
+    }
+}
 
-dial:
-  core:
-    serviceAccount:
-      create: true
-      name: dial-core
-      annotations:
-        eks.amazonaws.com/role-arn: ${CORE_SERVICE_ROLE_ARN}
-    
-    ingress:
-      enabled: true
-      className: alb
-      hosts:
-        - chat.${DOMAIN_NAME}
-      annotations:
-        alb.ingress.kubernetes.io/scheme: internet-facing
-        alb.ingress.kubernetes.io/target-type: ip
-        alb.ingress.kubernetes.io/security-groups: ${ALB_SG}
-        alb.ingress.kubernetes.io/certificate-arn: ${ACM_CERTIFICATE_ARN}
-        alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
-        alb.ingress.kubernetes.io/ssl-redirect: '443'
-    
-    configuration:
-      encryption:
-        key: ${CORE_ENCRYPTION_KEY}
-        secret: ${CORE_ENCRYPTION_SECRET}
-    
-    env:
-      aidial:
-        storage:
-          bucket: ${S3_BUCKET}
-        redis:
-          singleServerConfig:
-            address: redis://${REDIS_ENDPOINT}
-          provider:
-            userId: ${REDIS_USER_ID}
-            clusterName: ${REDIS_CLUSTER}
-        identityProviders:
-          cognito:
-            jwksUrl: ${COGNITO_JWKS_URL}
-    
-    secrets:
-      aidial:
-        identityProviders:
-          cognito:
-            loggingSalt: ${COGNITO_LOGGING_SALT}
-
-  chat:
-    ingress:
-      enabled: true
-      className: alb
-      hosts:
-        - chat.${DOMAIN_NAME}
-      annotations:
-        alb.ingress.kubernetes.io/scheme: internet-facing
-        alb.ingress.kubernetes.io/target-type: ip
-        alb.ingress.kubernetes.io/security-groups: ${ALB_SG}
-        alb.ingress.kubernetes.io/certificate-arn: ${ACM_CERTIFICATE_ARN}
-        alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
-        alb.ingress.kubernetes.io/ssl-redirect: '443'
-    
-    env:
-      NEXTAUTH_URL: https://chat.${DOMAIN_NAME}
-      THEMES_CONFIG_HOST: https://themes.${DOMAIN_NAME}
-    
-    secrets:
-      AUTH_COGNITO_HOST: ${COGNITO_HOST}
-      AUTH_COGNITO_CLIENT_ID: ${COGNITO_CLIENT_ID}
-      AUTH_COGNITO_SECRET: ${COGNITO_CLIENT_SECRET}
-      NEXTAUTH_SECRET: ${CHAT_NEXTAUTH_SECRET}
-      DIAL_API_KEY: ${DIAL_API_KEY}
-
-  themes:
-    ingress:
-      enabled: true
-      className: alb
-      hosts:
-        - themes.${DOMAIN_NAME}
-      annotations:
-        alb.ingress.kubernetes.io/scheme: internet-facing
-        alb.ingress.kubernetes.io/target-type: ip
-        alb.ingress.kubernetes.io/security-groups: ${ALB_SG}
-        alb.ingress.kubernetes.io/certificate-arn: ${ACM_CERTIFICATE_ARN}
-
-  bedrock:
-    serviceAccount:
-      create: true
-      name: dial-bedrock
-      annotations:
-        eks.amazonaws.com/role-arn: ${BEDROCK_SERVICE_ROLE_ARN}
-
-dialadmin:
-  backend:
-    externalDatabase:
-      enabled: true
-      host: ${DB_ENDPOINT}
-      port: ${DB_PORT}
-      database: ${DB_NAME}
-      user: ${DB_USER}
-      password: ${DB_PASSWORD}
-  
-  frontend:
-    ingress:
-      enabled: true
-      className: alb
-      hosts:
-        - admin.${DOMAIN_NAME}
-      annotations:
-        alb.ingress.kubernetes.io/scheme: internet-facing
-        alb.ingress.kubernetes.io/target-type: ip
-        alb.ingress.kubernetes.io/security-groups: ${ALB_SG}
-        alb.ingress.kubernetes.io/certificate-arn: ${ACM_CERTIFICATE_ARN}
-    
-    env:
-      NEXTAUTH_URL: https://admin.${DOMAIN_NAME}
-      AUTH_COGNITO_HOST: ${COGNITO_ADMIN_HOST}
-      AUTH_COGNITO_CLIENT_ID: ${COGNITO_ADMIN_CLIENT_ID}
-    
-    secrets:
-      AUTH_COGNITO_SECRET: ${COGNITO_ADMIN_CLIENT_SECRET}
-      NEXTAUTH_SECRET: ${ADMIN_NEXTAUTH_SECRET}
-EOF
+# Write YAML file
+with open('helm-values.yaml', 'w') as f:
+    yaml.dump(helm_values, f, default_flow_style=False, allow_unicode=True)
+PYEOF
 
 echo "✅ Saved to: helm-values.yaml"
 
@@ -378,15 +409,37 @@ echo "📚 Adding DIAL Helm repository..."
 echo "=========================================="
 
 # Remove repo if exists to avoid conflicts
-helm repo remove epam 2>/dev/null || true
+helm repo remove dial 2>/dev/null || true
 
-# Add repo
-helm repo add epam https://charts.epam.com
+# Add repo (correct URL is epam-rail.com!)
+helm repo add dial https://charts.epam-rail.com
 
 # Update
 helm repo update
 
 echo "✅ Helm repository ready"
+
+# Check if DIAL is already installed and uninstall
+echo ""
+echo "=========================================="
+echo "🔍 Checking for existing DIAL installation..."
+echo "=========================================="
+
+if helm list -n dial 2>/dev/null | grep -q dial; then
+    echo "⚠️  Found existing DIAL installation - uninstalling..."
+    helm uninstall dial -n dial
+    echo "✅ Uninstalled existing DIAL"
+    echo "⏳ Waiting for cleanup (30 seconds)..."
+    sleep 30
+elif helm list 2>/dev/null | grep -q dial; then
+    echo "⚠️  Found existing DIAL installation in default namespace - uninstalling..."
+    helm uninstall dial
+    echo "✅ Uninstalled existing DIAL"
+    echo "⏳ Waiting for cleanup (30 seconds)..."
+    sleep 30
+else
+    echo "✅ No existing installation found"
+fi
 
 # Deploy DIAL
 echo ""
@@ -396,7 +449,7 @@ echo "=========================================="
 echo "This will take 5-10 minutes..."
 echo ""
 
-helm install dial epam/dial \
+helm install dial dial/dial \
   --namespace dial \
   --create-namespace \
   --values helm-values.yaml \
