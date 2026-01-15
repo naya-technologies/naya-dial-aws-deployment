@@ -110,6 +110,20 @@ DB_USER="postgres"
 # Get domain from parameters.conf
 DOMAIN_NAME=$(grep "^DOMAIN_NAME=" parameters.conf | cut -d'=' -f2- | tr -d '"')
 
+# Helm release and namespace defaults (override via env if needed)
+DIAL_RELEASE_NAME="${DIAL_RELEASE_NAME:-dial}"
+DIAL_NAMESPACE="${DIAL_NAMESPACE:-dial}"
+
+# Helm chart location (AWS Marketplace/ECR)
+CHART_OCI_REPO="${CHART_OCI_REPO:-709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-helm-deployment}"
+CHART_VERSION="${CHART_VERSION:-2026.1.6}"
+
+# Public hosts
+DIAL_PUBLIC_HOST="core.${DOMAIN_NAME}"
+CHAT_PUBLIC_HOST="chat.${DOMAIN_NAME}"
+THEMES_PUBLIC_HOST="themes.${DOMAIN_NAME}"
+ADMIN_PUBLIC_HOST="admin.${DOMAIN_NAME}"
+
 # Construct URLs
 COGNITO_HOST="https://cognito-idp.${REGION}.amazonaws.com/${COGNITO_POOL_ID}"
 COGNITO_JWKS_URL="${COGNITO_HOST}/.well-known/jwks.json"
@@ -177,9 +191,12 @@ ADMIN_NEXTAUTH_SECRET="$ADMIN_NEXTAUTH_SECRET"
 
 # Domain Configuration
 DOMAIN_NAME="$DOMAIN_NAME"
-DIAL_PUBLIC_HOST="chat.${DOMAIN_NAME}"
-THEMES_PUBLIC_HOST="themes.${DOMAIN_NAME}"
-ADMIN_PUBLIC_HOST="admin.${DOMAIN_NAME}"
+DIAL_RELEASE_NAME="$DIAL_RELEASE_NAME"
+DIAL_NAMESPACE="$DIAL_NAMESPACE"
+DIAL_PUBLIC_HOST="$DIAL_PUBLIC_HOST"
+CHAT_PUBLIC_HOST="$CHAT_PUBLIC_HOST"
+THEMES_PUBLIC_HOST="$THEMES_PUBLIC_HOST"
+ADMIN_PUBLIC_HOST="$ADMIN_PUBLIC_HOST"
 EOF
 
 echo "✅ Saved to: deployment-outputs.env"
@@ -198,7 +215,8 @@ fi
 
 # Export all variables for Python
 export REGION VPC_ID EKS_CLUSTER_NAME ALB_CONTROLLER_ROLE_ARN CORE_ROLE_ARN
-export DOMAIN_NAME ALB_SG ACM_CERTIFICATE_ARN CORE_ENCRYPTION_KEY CORE_ENCRYPTION_SECRET
+export DOMAIN_NAME DIAL_RELEASE_NAME DIAL_NAMESPACE DIAL_PUBLIC_HOST CHAT_PUBLIC_HOST THEMES_PUBLIC_HOST ADMIN_PUBLIC_HOST
+export ALB_SG ACM_CERTIFICATE_ARN CORE_ENCRYPTION_KEY CORE_ENCRYPTION_SECRET
 export S3_BUCKET REDIS_ENDPOINT REDIS_USER_ID REDIS_CLUSTER COGNITO_JWKS_URL COGNITO_LOGGING_SALT
 export COGNITO_HOST COGNITO_CLIENT_ID COGNITO_CLIENT_SECRET CHAT_NEXTAUTH_SECRET DIAL_API_KEY
 export BEDROCK_ROLE_ARN DB_ENDPOINT DB_PORT DB_NAME DB_USER DB_PASSWORD
@@ -206,8 +224,20 @@ export COGNITO_ADMIN_HOST COGNITO_ADMIN_CLIENT_ID COGNITO_ADMIN_CLIENT_SECRET AD
 
 # Create helm values using Python to avoid YAML issues
 python3 << 'PYEOF'
-import yaml
 import os
+import yaml
+
+release = os.environ.get('DIAL_RELEASE_NAME', 'dial')
+namespace = os.environ.get('DIAL_NAMESPACE', 'dial')
+core_service = f"{release}-core"
+admin_backend_service = f"{release}-admin-backend"
+core_service_url = f"http://{core_service}.{namespace}.svc.cluster.local"
+admin_backend_url = f"http://{admin_backend_service}.{namespace}.svc.cluster.local/"
+
+dial_public_host = os.environ['DIAL_PUBLIC_HOST']
+chat_public_host = os.environ['CHAT_PUBLIC_HOST']
+themes_public_host = os.environ['THEMES_PUBLIC_HOST']
+admin_public_host = os.environ['ADMIN_PUBLIC_HOST']
 
 helm_values = {
     'global': {
@@ -237,15 +267,11 @@ helm_values = {
             },
             'ingress': {
                 'enabled': True,
-                'className': 'alb',
-                'hosts': ['chat.' + os.environ['DOMAIN_NAME']],
+                'ingressClassName': 'alb',
+                'hosts': [dial_public_host],
                 'annotations': {
-                    'alb.ingress.kubernetes.io/scheme': 'internet-facing',
-                    'alb.ingress.kubernetes.io/target-type': 'ip',
                     'alb.ingress.kubernetes.io/security-groups': os.environ['ALB_SG'],
-                    'alb.ingress.kubernetes.io/certificate-arn': os.environ['ACM_CERTIFICATE_ARN'],
-                    'alb.ingress.kubernetes.io/listen-ports': '[{"HTTP": 80}, {"HTTPS": 443}]',
-                    'alb.ingress.kubernetes.io/ssl-redirect': '443'
+                    'alb.ingress.kubernetes.io/certificate-arn': os.environ['ACM_CERTIFICATE_ARN']
                 }
             },
             'configuration': {
@@ -255,53 +281,32 @@ helm_values = {
                 }
             },
             'env': {
-                'aidial': {
-                    'storage': {
-                        'bucket': os.environ['S3_BUCKET']
-                    },
-                    'redis': {
-                        'singleServerConfig': {
-                            'address': 'redis://' + os.environ['REDIS_ENDPOINT']
-                        },
-                        'provider': {
-                            'userId': os.environ['REDIS_USER_ID'],
-                            'clusterName': os.environ['REDIS_CLUSTER']
-                        }
-                    },
-                    'identityProviders': {
-                        'cognito': {
-                            'jwksUrl': os.environ['COGNITO_JWKS_URL']
-                        }
-                    }
-                }
+                'aidial.storage.bucket': os.environ['S3_BUCKET'],
+                'aidial.redis.singleServerConfig.address': os.environ['REDIS_ENDPOINT'],
+                'aidial.redis.provider.userId': os.environ['REDIS_USER_ID'],
+                'aidial.redis.provider.region': os.environ['REGION'],
+                'aidial.redis.provider.clusterName': os.environ['REDIS_CLUSTER'],
+                'aidial.identityProviders.cognito.jwksUrl': os.environ['COGNITO_JWKS_URL'],
+                'aidial.identityProviders.cognito.issuerPattern': '^https://cognito-idp\\.' + os.environ['REGION'] + '\\.amazonaws\\.com.+$'
             },
             'secrets': {
-                'aidial': {
-                    'identityProviders': {
-                        'cognito': {
-                            'loggingSalt': os.environ['COGNITO_LOGGING_SALT']
-                        }
-                    }
-                }
+                'aidial.identityProviders.cognito.loggingSalt': os.environ['COGNITO_LOGGING_SALT']
             }
         },
         'chat': {
             'ingress': {
                 'enabled': True,
-                'className': 'alb',
-                'hosts': ['chat.' + os.environ['DOMAIN_NAME']],
+                'ingressClassName': 'alb',
+                'hosts': [chat_public_host],
                 'annotations': {
-                    'alb.ingress.kubernetes.io/scheme': 'internet-facing',
-                    'alb.ingress.kubernetes.io/target-type': 'ip',
                     'alb.ingress.kubernetes.io/security-groups': os.environ['ALB_SG'],
-                    'alb.ingress.kubernetes.io/certificate-arn': os.environ['ACM_CERTIFICATE_ARN'],
-                    'alb.ingress.kubernetes.io/listen-ports': '[{"HTTP": 80}, {"HTTPS": 443}]',
-                    'alb.ingress.kubernetes.io/ssl-redirect': '443'
+                    'alb.ingress.kubernetes.io/certificate-arn': os.environ['ACM_CERTIFICATE_ARN']
                 }
             },
             'env': {
-                'NEXTAUTH_URL': 'https://chat.' + os.environ['DOMAIN_NAME'],
-                'THEMES_CONFIG_HOST': 'https://themes.' + os.environ['DOMAIN_NAME']
+                'NEXTAUTH_URL': 'https://' + chat_public_host,
+                'DIAL_API_HOST': core_service_url,
+                'THEMES_CONFIG_HOST': 'https://' + themes_public_host
             },
             'secrets': {
                 'AUTH_COGNITO_HOST': os.environ['COGNITO_HOST'],
@@ -314,17 +319,18 @@ helm_values = {
         'themes': {
             'ingress': {
                 'enabled': True,
-                'className': 'alb',
-                'hosts': ['themes.' + os.environ['DOMAIN_NAME']],
+                'ingressClassName': 'alb',
+                'hosts': [themes_public_host],
                 'annotations': {
-                    'alb.ingress.kubernetes.io/scheme': 'internet-facing',
-                    'alb.ingress.kubernetes.io/target-type': 'ip',
                     'alb.ingress.kubernetes.io/security-groups': os.environ['ALB_SG'],
                     'alb.ingress.kubernetes.io/certificate-arn': os.environ['ACM_CERTIFICATE_ARN']
                 }
             }
         },
         'bedrock': {
+            'env': {
+                'DIAL_URL': core_service_url
+            },
             'serviceAccount': {
                 'create': True,
                 'name': 'dial-bedrock',
@@ -334,31 +340,31 @@ helm_values = {
             }
         }
     },
-    'dialadmin': {
+    'admin': {
         'backend': {
-            'externalDatabase': {
-                'enabled': True,
-                'host': os.environ['DB_ENDPOINT'],
-                'port': int(os.environ['DB_PORT']),
-                'database': os.environ['DB_NAME'],
-                'user': os.environ['DB_USER'],
-                'password': os.environ['DB_PASSWORD']
+            'env': {
+                'CORE_CLIENT_URL': core_service_url
+            },
+            'configuration': {
+                'export': {
+                    'names': [core_service],
+                    'namespace': namespace
+                }
             }
         },
         'frontend': {
             'ingress': {
                 'enabled': True,
-                'className': 'alb',
-                'hosts': ['admin.' + os.environ['DOMAIN_NAME']],
+                'ingressClassName': 'alb',
+                'hosts': [admin_public_host],
                 'annotations': {
-                    'alb.ingress.kubernetes.io/scheme': 'internet-facing',
-                    'alb.ingress.kubernetes.io/target-type': 'ip',
                     'alb.ingress.kubernetes.io/security-groups': os.environ['ALB_SG'],
                     'alb.ingress.kubernetes.io/certificate-arn': os.environ['ACM_CERTIFICATE_ARN']
                 }
             },
             'env': {
-                'NEXTAUTH_URL': 'https://admin.' + os.environ['DOMAIN_NAME'],
+                'NEXTAUTH_URL': 'https://' + admin_public_host,
+                'DIAL_ADMIN_API_URL': admin_backend_url,
                 'AUTH_COGNITO_HOST': os.environ['COGNITO_ADMIN_HOST'],
                 'AUTH_COGNITO_CLIENT_ID': os.environ['COGNITO_ADMIN_CLIENT_ID']
             },
@@ -366,6 +372,13 @@ helm_values = {
                 'AUTH_COGNITO_SECRET': os.environ['COGNITO_ADMIN_CLIENT_SECRET'],
                 'NEXTAUTH_SECRET': os.environ['ADMIN_NEXTAUTH_SECRET']
             }
+        },
+        'externalDatabase': {
+            'host': os.environ['DB_ENDPOINT'],
+            'port': int(os.environ['DB_PORT']),
+            'database': os.environ['DB_NAME'],
+            'user': os.environ['DB_USER'],
+            'password': os.environ['DB_PASSWORD']
         }
     }
 }
@@ -405,19 +418,18 @@ echo "✅ CRDs installed"
 # Add Helm repo
 echo ""
 echo "=========================================="
-echo "📚 Adding DIAL Helm repository..."
+echo "📚 Using OCI Helm chart..."
 echo "=========================================="
 
-# Remove repo if exists to avoid conflicts
-helm repo remove dial 2>/dev/null || true
+if [ -z "$CHART_OCI_REPO" ]; then
+    echo "❌ Error: CHART_OCI_REPO is not set"
+    exit 1
+fi
 
-# Add repo (correct URL is epam-rail.com!)
-helm repo add dial https://charts.epam-rail.com
-
-# Update
-helm repo update
-
-echo "✅ Helm repository ready"
+CHART_REGISTRY="${CHART_OCI_REPO%%/*}"
+echo "🔐 Authenticating to OCI registry: ${CHART_REGISTRY}"
+aws ecr get-login-password --region "$REGION" | helm registry login --username AWS --password-stdin "$CHART_REGISTRY"
+echo "✅ OCI registry login complete"
 
 # Check if DIAL is already installed and uninstall
 echo ""
@@ -425,15 +437,15 @@ echo "=========================================="
 echo "🔍 Checking for existing DIAL installation..."
 echo "=========================================="
 
-if helm list -n dial 2>/dev/null | grep -q dial; then
+if helm list -n "$DIAL_NAMESPACE" 2>/dev/null | grep -q "$DIAL_RELEASE_NAME"; then
     echo "⚠️  Found existing DIAL installation - uninstalling..."
-    helm uninstall dial -n dial
+    helm uninstall "$DIAL_RELEASE_NAME" -n "$DIAL_NAMESPACE"
     echo "✅ Uninstalled existing DIAL"
     echo "⏳ Waiting for cleanup (30 seconds)..."
     sleep 30
-elif helm list 2>/dev/null | grep -q dial; then
+elif helm list 2>/dev/null | grep -q "$DIAL_RELEASE_NAME"; then
     echo "⚠️  Found existing DIAL installation in default namespace - uninstalling..."
-    helm uninstall dial
+    helm uninstall "$DIAL_RELEASE_NAME"
     echo "✅ Uninstalled existing DIAL"
     echo "⏳ Waiting for cleanup (30 seconds)..."
     sleep 30
@@ -449,8 +461,9 @@ echo "=========================================="
 echo "This will take 5-10 minutes..."
 echo ""
 
-helm install dial dial/dial \
-  --namespace dial \
+helm install "$DIAL_RELEASE_NAME" "oci://${CHART_OCI_REPO}" \
+  --version "$CHART_VERSION" \
+  --namespace "$DIAL_NAMESPACE" \
   --create-namespace \
   --values helm-values.yaml \
   --timeout 15m
@@ -470,12 +483,12 @@ echo "🌐 DNS Configuration Required"
 echo "=========================================="
 echo ""
 
-ALB_DNS=$(kubectl get ingress dial-chat -n dial -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "pending...")
+ALB_DNS=$(kubectl get ingress "${DIAL_RELEASE_NAME}-chat" -n "$DIAL_NAMESPACE" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "pending...")
 
 if [ "$ALB_DNS" = "pending..." ] || [ -z "$ALB_DNS" ]; then
     echo "⏳ Load Balancer still provisioning..."
     echo "   Run this command in a few minutes to get the ALB DNS:"
-    echo "   kubectl get ingress -n dial"
+    echo "   kubectl get ingress -n ${DIAL_NAMESPACE}"
     echo ""
     echo "Then add DNS records pointing to the ALB DNS name."
 else
@@ -489,19 +502,25 @@ echo "=========================================="
 echo ""
 echo "Record 1:"
 echo "  Type:  CNAME"
-echo "  Name:  chat.${DOMAIN_NAME}"
+echo "  Name:  ${CHAT_PUBLIC_HOST}"
 echo "  Value: ${ALB_DNS}"
 echo "  TTL:   300"
 echo ""
 echo "Record 2:"
 echo "  Type:  CNAME"  
-echo "  Name:  admin.${DOMAIN_NAME}"
+echo "  Name:  ${ADMIN_PUBLIC_HOST}"
 echo "  Value: ${ALB_DNS}"
 echo "  TTL:   300"
 echo ""
 echo "Record 3:"
 echo "  Type:  CNAME"
-echo "  Name:  themes.${DOMAIN_NAME}"
+echo "  Name:  ${THEMES_PUBLIC_HOST}"
+echo "  Value: ${ALB_DNS}"
+echo "  TTL:   300"
+echo ""
+echo "Record 4:"
+echo "  Type:  CNAME"
+echo "  Name:  ${DIAL_PUBLIC_HOST}"
 echo "  Value: ${ALB_DNS}"
 echo "  TTL:   300"
 echo ""
@@ -522,15 +541,15 @@ echo "  📄 deployment-outputs.env  - Infrastructure outputs"
 echo "  📄 helm-values.yaml        - Helm values used"
 echo ""
 echo "⚠️  FINAL STEPS:"
-echo "  1. Add the 3 DNS records shown above"
+echo "  1. Add the 4 DNS records shown above"
 echo "  2. Wait 5-30 minutes for DNS propagation"
 echo "  3. Access DIAL:"
 echo "     - Chat:  https://chat.${DOMAIN_NAME}"
 echo "     - Admin: https://admin.${DOMAIN_NAME}"
 echo ""
 echo "🔍 Verify deployment:"
-echo "  kubectl get pods -n dial"
-echo "  kubectl get ingress -n dial"
+echo "  kubectl get pods -n ${DIAL_NAMESPACE}"
+echo "  kubectl get ingress -n ${DIAL_NAMESPACE}"
 echo ""
 echo "⚠️  SECURITY: Keep deployment-outputs.env and helm-values.yaml secure!"
 echo "   They contain passwords and secrets."
