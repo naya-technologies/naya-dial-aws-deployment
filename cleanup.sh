@@ -55,8 +55,8 @@ print_header "DIAL Cleanup Script"
 
 echo "This script will clean up the following resources:"
 echo "  - CloudFormation Stack: ${STACK_NAME}"
-echo "  - S3 Buckets: dial-production-cfn-templates-${ACCOUNT_ID}"
-echo "                dial-production-templates-${ACCOUNT_ID}"
+echo "  - S3 Buckets: ${STACK_NAME}-cfn-templates-${ACCOUNT_ID}"
+echo "                ${STACK_NAME}-templates-${ACCOUNT_ID}"
 echo "  - Cognito Test Pools (if any)"
 echo "  - Region: ${AWS_REGION}"
 echo ""
@@ -134,8 +134,8 @@ delete_bucket() {
 }
 
 # Delete template buckets
-delete_bucket "dial-production-cfn-templates-${ACCOUNT_ID}"
-delete_bucket "dial-production-templates-${ACCOUNT_ID}"
+delete_bucket "${STACK_NAME}-cfn-templates-${ACCOUNT_ID}"
+delete_bucket "${STACK_NAME}-templates-${ACCOUNT_ID}"
 
 ###############################################################################
 # Step 3: Delete Test Cognito Pools

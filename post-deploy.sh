@@ -60,6 +60,14 @@ REDIS_CLUSTER=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="RedisClusterN
 REDIS_USER_ID=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="RedisUserId") | .OutputValue')
 DB_ENDPOINT=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="RDSEndpoint") | .OutputValue')
 DB_PORT=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="RDSPort") | .OutputValue')
+
+# Validate DB_PORT (should be 5432 for PostgreSQL)
+if [ -z "$DB_PORT" ]; then
+    echo "⚠️  Warning: DB_PORT not found in CloudFormation outputs, defaulting to 5432"
+    DB_PORT="5432"
+elif [ "$DB_PORT" != "5432" ]; then
+    echo "⚠️  Warning: DB_PORT is $DB_PORT, expected 5432 for PostgreSQL. Using $DB_PORT from CloudFormation output."
+fi
 COGNITO_POOL_ID=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="CognitoUserPoolId") | .OutputValue')
 COGNITO_CLIENT_ID=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="CognitoClientId") | .OutputValue')
 COGNITO_ADMIN_POOL_ID=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="AdminCognitoUserPoolId") | .OutputValue')
@@ -72,11 +80,61 @@ ALB_CONTROLLER_ROLE_ARN=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="ALB
 echo "🔍 Fetching additional AWS information..."
 
 # Get ALB Security Group
-ALB_SG=$(aws ec2 describe-security-groups \
+ALB_SG=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="ALBSecurityGroupId") | .OutputValue')
+
+# Get EKS Cluster Security Group ID (the one actually used by nodes)
+EKS_CLUSTER_SG=$(aws eks describe-cluster \
+    --name "$EKS_CLUSTER_NAME" \
     --region "$REGION" \
-    --filters "Name=vpc-id,Values=$VPC_ID" "Name=group-name,Values=*ALBSecurityGroup*" \
+    --query 'cluster.resourcesVpcConfig.clusterSecurityGroupId' \
+    --output text 2>/dev/null || true)
+
+# Get Redis Security Group ID
+REDIS_SG=$(aws ec2 describe-security-groups \
+    --region "$REGION" \
+    --filters "Name=vpc-id,Values=$VPC_ID" "Name=tag:Name,Values=*redis-sg*" \
     --query 'SecurityGroups[0].GroupId' \
-    --output text)
+    --output text 2>/dev/null || true)
+
+if [ "$REDIS_SG" = "None" ] || [ "$REDIS_SG" = "null" ]; then
+    REDIS_SG=""
+fi
+
+if [ "$EKS_CLUSTER_SG" = "None" ] || [ "$EKS_CLUSTER_SG" = "null" ]; then
+    EKS_CLUSTER_SG=""
+fi
+
+# Fix Redis security group to allow traffic from EKS cluster security group
+echo "🔧 Fixing Redis security group to allow traffic from EKS cluster..."
+if [ -n "$REDIS_SG" ] && [ -n "$EKS_CLUSTER_SG" ]; then
+    # Check if rule already exists
+    EXISTING_RULE=$(aws ec2 describe-security-groups \
+        --group-ids "$REDIS_SG" \
+        --region "$REGION" \
+        --query "SecurityGroups[0].IpPermissions[?IpProtocol=='tcp' && FromPort==6379 && ToPort==6379 && length(UserIdGroupPairs[?GroupId=='$EKS_CLUSTER_SG']) > 0]" \
+        --output text 2>/dev/null || true)
+    
+    if [ -z "$EXISTING_RULE" ] || [ "$EXISTING_RULE" = "None" ]; then
+        echo "   Adding ingress rule for EKS cluster security group ($EKS_CLUSTER_SG)..."
+        if aws ec2 authorize-security-group-ingress \
+            --group-id "$REDIS_SG" \
+            --protocol tcp \
+            --port 6379 \
+            --source-group "$EKS_CLUSTER_SG" \
+            --region "$REGION" \
+            --output text > /dev/null 2>&1; then
+            echo "✅ Redis security group updated"
+        else
+            echo "⚠️  Warning: Failed to add security group rule. You may need to add it manually."
+        fi
+    else
+        echo "✅ Redis security group rule already exists"
+    fi
+else
+    echo "⚠️  Warning: Could not find Redis or EKS cluster security group"
+    echo "   Redis SG: ${REDIS_SG:-not found}"
+    echo "   EKS Cluster SG: ${EKS_CLUSTER_SG:-not found}"
+fi
 
 # Get Cognito Client Secret
 COGNITO_CLIENT_SECRET=$(aws cognito-idp describe-user-pool-client \
@@ -116,7 +174,7 @@ DIAL_NAMESPACE="${DIAL_NAMESPACE:-dial}"
 
 # Helm chart location (AWS Marketplace/ECR)
 CHART_OCI_REPO="${CHART_OCI_REPO:-709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-helm-deployment}"
-CHART_VERSION="${CHART_VERSION:-2026.1.6}"
+CHART_VERSION="${CHART_VERSION:-2026.1.8}"
 
 # Public hosts
 DIAL_PUBLIC_HOST="core.${DOMAIN_NAME}"
@@ -287,7 +345,7 @@ helm_values = {
                 'aidial.redis.provider.region': os.environ['REGION'],
                 'aidial.redis.provider.clusterName': os.environ['REDIS_CLUSTER'],
                 'aidial.identityProviders.cognito.jwksUrl': os.environ['COGNITO_JWKS_URL'],
-                'aidial.identityProviders.cognito.issuerPattern': '^https://cognito-idp\\.' + os.environ['REGION'] + '\\.amazonaws\\.com.+$'
+                'aidial.identityProviders.cognito.issuerPattern': '^https:\\/\\/cognito-idp\\.' + os.environ['REGION'] + '\\.amazonaws\\.com.+$'
             },
             'secrets': {
                 'aidial.identityProviders.cognito.loggingSalt': os.environ['COGNITO_LOGGING_SALT']
@@ -375,7 +433,7 @@ helm_values = {
         },
         'externalDatabase': {
             'host': os.environ['DB_ENDPOINT'],
-            'port': int(os.environ['DB_PORT']),
+            'port': int(os.environ.get('DB_PORT', '5432')),  # Default to 5432 if not set
             'database': os.environ['DB_NAME'],
             'user': os.environ['DB_USER'],
             'password': os.environ['DB_PASSWORD']

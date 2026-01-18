@@ -229,6 +229,10 @@ Resources:
       ToPort: 6379
       SourceSecurityGroupId: !Ref EKSSecurityGroup
 
+  # Additional ingress rule for EKS cluster security group (created by EKS)
+  # This will be updated after EKS cluster is created via a separate update
+  # For now, we keep the EKSSecurityGroup rule above for backward compatibility
+
   VPCESecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -254,16 +258,6 @@ Resources:
       GroupId: !Ref ALBSecurityGroup
       IpProtocol: -1
       DestinationSecurityGroupId: !Ref EKSSecurityGroup
-
-  # EKS ingress from ALB
-  EKSSecurityGroupIngressFromALB:
-    Type: AWS::EC2::SecurityGroupIngress
-    Properties:
-      GroupId: !Ref EKSSecurityGroup
-      IpProtocol: tcp
-      FromPort: 0
-      ToPort: 65535
-      SourceSecurityGroupId: !Ref ALBSecurityGroup
 
   # VPC Endpoints (Interface)
   LogsEndpoint:

@@ -304,8 +304,10 @@ Outputs:
       Name: !Sub '${AWS::StackName}-OIDCProviderUrl'
 
   ClusterSecurityGroupId:
-    Description: EKS Cluster Security Group ID
+    Description: EKS Cluster Security Group ID (used by nodes)
     Value: !GetAtt EKSCluster.ClusterSecurityGroupId
+    Export:
+      Name: !Sub '${AWS::StackName}-ClusterSecurityGroupId'
 
   NodeRoleArn:
     Description: Node IAM Role ARN

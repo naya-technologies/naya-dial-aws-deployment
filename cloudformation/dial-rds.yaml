@@ -59,6 +59,7 @@ Resources:
       Engine: aurora-postgresql
       EngineMode: provisioned
       EngineVersion: '15.8'
+      Port: 5432
       DatabaseName: !Ref DBName
       MasterUsername: !Ref DBMasterUsername
       MasterUserPassword: !Ref DBMasterPassword

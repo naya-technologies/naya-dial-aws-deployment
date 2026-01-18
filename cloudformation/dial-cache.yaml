@@ -24,27 +24,10 @@ Resources:
       Engine: redis
       AccessString: 'on ~* +@all'
       AuthenticationMode:
-        Type: password
-        Passwords:
-          - !Sub '{{resolve:secretsmanager:${RedisPasswordSecret}:SecretString:password}}'
+        Type: iam
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName}-redis-user'
-
-  # Secret for Redis password
-  RedisPasswordSecret:
-    Type: AWS::SecretsManager::Secret
-    Properties:
-      Name: !Sub 'dial-redis-pwd-${AWS::AccountId}'
-      Description: Redis user password
-      GenerateSecretString:
-        SecretStringTemplate: '{}'
-        GenerateStringKey: password
-        PasswordLength: 32
-        ExcludeCharacters: '"@/\'
-      Tags:
-        - Key: Name
-          Value: !Sub '${AWS::StackName}-redis-password'
 
   # Redis User Group
   RedisUserGroup:
@@ -129,7 +112,3 @@ Outputs:
     Value: !Sub 'arn:aws:elasticache:${AWS::Region}:${AWS::AccountId}:user:${RedisUser}'
     Export:
       Name: !Sub '${AWS::StackName}-RedisUserArn'
-
-  RedisPasswordSecretArn:
-    Description: Redis Password Secret ARN
-    Value: !Ref RedisPasswordSecret
