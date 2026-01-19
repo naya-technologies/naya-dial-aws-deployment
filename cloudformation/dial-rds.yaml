@@ -13,6 +13,9 @@ Parameters:
   
   RDSSecurityGroupId:
     Type: String
+
+  EKSClusterSecurityGroupId:
+    Type: String
   
   DBMasterUsername:
     Type: String
@@ -79,6 +82,16 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName}-aurora-cluster'
+
+  # Allow access from EKS cluster security group
+  RDSSecurityGroupIngressFromCluster:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref RDSSecurityGroupId
+      IpProtocol: tcp
+      FromPort: 5432
+      ToPort: 5432
+      SourceSecurityGroupId: !Ref EKSClusterSecurityGroupId
 
   # Aurora DB Instance (required for Serverless v2)
   AuroraInstance1:

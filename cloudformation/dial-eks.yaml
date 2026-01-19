@@ -136,6 +136,19 @@ Resources:
       SecurityGroupIds:
         - !Ref VPCESecurityGroup
 
+  ELBVPCEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPCId
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.elasticloadbalancing'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - !Ref PrivateSubnet1Id
+        - !Ref PrivateSubnet2Id
+      SecurityGroupIds:
+        - !Ref VPCESecurityGroup
+
   # EKS Cluster IAM Role
   EKSClusterRole:
     Type: AWS::IAM::Role
@@ -186,6 +199,7 @@ Resources:
       - S3Endpoint
       - STSEndpoint
       - EKSVPCEndpoint
+      - ELBVPCEndpoint
     Properties:
       Name: !Ref ClusterName
       Version: !Ref KubernetesVersion

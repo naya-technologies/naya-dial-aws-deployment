@@ -104,37 +104,7 @@ if [ "$EKS_CLUSTER_SG" = "None" ] || [ "$EKS_CLUSTER_SG" = "null" ]; then
     EKS_CLUSTER_SG=""
 fi
 
-# Fix Redis security group to allow traffic from EKS cluster security group
-echo "🔧 Fixing Redis security group to allow traffic from EKS cluster..."
-if [ -n "$REDIS_SG" ] && [ -n "$EKS_CLUSTER_SG" ]; then
-    # Check if rule already exists
-    EXISTING_RULE=$(aws ec2 describe-security-groups \
-        --group-ids "$REDIS_SG" \
-        --region "$REGION" \
-        --query "SecurityGroups[0].IpPermissions[?IpProtocol=='tcp' && FromPort==6379 && ToPort==6379 && length(UserIdGroupPairs[?GroupId=='$EKS_CLUSTER_SG']) > 0]" \
-        --output text 2>/dev/null || true)
-    
-    if [ -z "$EXISTING_RULE" ] || [ "$EXISTING_RULE" = "None" ]; then
-        echo "   Adding ingress rule for EKS cluster security group ($EKS_CLUSTER_SG)..."
-        if aws ec2 authorize-security-group-ingress \
-            --group-id "$REDIS_SG" \
-            --protocol tcp \
-            --port 6379 \
-            --source-group "$EKS_CLUSTER_SG" \
-            --region "$REGION" \
-            --output text > /dev/null 2>&1; then
-            echo "✅ Redis security group updated"
-        else
-            echo "⚠️  Warning: Failed to add security group rule. You may need to add it manually."
-        fi
-    else
-        echo "✅ Redis security group rule already exists"
-    fi
-else
-    echo "⚠️  Warning: Could not find Redis or EKS cluster security group"
-    echo "   Redis SG: ${REDIS_SG:-not found}"
-    echo "   EKS Cluster SG: ${EKS_CLUSTER_SG:-not found}"
-fi
+
 
 # Get Cognito Client Secret
 COGNITO_CLIENT_SECRET=$(aws cognito-idp describe-user-pool-client \
