@@ -224,6 +224,21 @@ Resources:
         - Key: Name
           Value: !Ref ClusterName
 
+  EKSNodeLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        BlockDeviceMappings:
+          - DeviceName: /dev/xvda
+            Ebs:
+              DeleteOnTermination: true
+              VolumeSize: 100
+        NetworkInterfaces:
+          - DeviceIndex: 0
+            Groups:
+              - !Ref EKSSecurityGroupId
+              - !GetAtt EKSCluster.ClusterSecurityGroupId
+
   # EKS Node Group
   EKSNodeGroup:
     Type: AWS::EKS::Nodegroup
@@ -232,6 +247,9 @@ Resources:
       ClusterName: !Ref ClusterName
       NodegroupName: !Sub '${ClusterName}-ng-1'
       NodeRole: !GetAtt EKSNodeRole.Arn
+      LaunchTemplate:
+        Id: !Ref EKSNodeLaunchTemplate
+        Version: !GetAtt EKSNodeLaunchTemplate.LatestVersionNumber
       Subnets:
         - !Ref PrivateSubnet1Id
         - !Ref PrivateSubnet2Id
@@ -245,7 +263,6 @@ Resources:
         - t3a.large
         - m5a.large
       AmiType: AL2_x86_64
-      DiskSize: 100
       Tags:
         Name: !Sub '${ClusterName}-ng-1'
 

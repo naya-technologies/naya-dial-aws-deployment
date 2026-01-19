@@ -68,10 +68,91 @@ if [ "$CONFIRM" != "yes" ]; then
 fi
 
 ###############################################################################
-# Step 1: Delete CloudFormation Stack
+# Step 1: Disable RDS deletion protection (if present)
 ###############################################################################
 
-print_header "Step 1: Deleting CloudFormation Stack"
+print_header "Step 1: Disabling RDS deletion protection (if any)"
+
+if aws cloudformation describe-stacks --stack-name ${STACK_NAME} --region ${AWS_REGION} &> /dev/null; then
+    DB_STACK_NAME=$(aws cloudformation describe-stack-resources \
+        --stack-name ${STACK_NAME} \
+        --region ${AWS_REGION} \
+        --query "StackResources[?LogicalResourceId=='DatabaseStack' && ResourceType=='AWS::CloudFormation::Stack'].PhysicalResourceId" \
+        --output text 2>/dev/null || echo "")
+
+    if [ -n "$DB_STACK_NAME" ] && [ "$DB_STACK_NAME" != "None" ]; then
+        print_info "Found database stack: ${DB_STACK_NAME}"
+
+        DB_CLUSTERS=$(aws cloudformation describe-stack-resources \
+            --stack-name ${DB_STACK_NAME} \
+            --region ${AWS_REGION} \
+            --query "StackResources[?ResourceType=='AWS::RDS::DBCluster'].PhysicalResourceId" \
+            --output text 2>/dev/null || echo "")
+
+        if [ -n "$DB_CLUSTERS" ] && [ "$DB_CLUSTERS" != "None" ]; then
+            for DB_CLUSTER in $DB_CLUSTERS; do
+                print_info "Disabling deletion protection for DB cluster: ${DB_CLUSTER}"
+                aws rds modify-db-cluster \
+                    --db-cluster-identifier ${DB_CLUSTER} \
+                    --no-deletion-protection \
+                    --apply-immediately \
+                    --region ${AWS_REGION} 2>/dev/null || true
+            done
+        else
+            print_info "No DB clusters found in database stack"
+        fi
+    else
+        print_info "Database stack not found, skipping"
+    fi
+else
+    print_info "Stack ${STACK_NAME} does not exist, skipping"
+fi
+
+###############################################################################
+# Step 2: Delete ALBs in the stack VPC (if any)
+###############################################################################
+
+print_header "Step 2: Deleting ALBs in VPC (if any)"
+
+VPC_ID_FROM_STACK=$(aws cloudformation describe-stacks \
+    --stack-name ${STACK_NAME} \
+    --region ${AWS_REGION} \
+    --query "Stacks[0].Outputs[?OutputKey=='VPCId'].OutputValue" \
+    --output text 2>/dev/null || echo "")
+
+if [ -n "$VPC_ID_FROM_STACK" ] && [ "$VPC_ID_FROM_STACK" != "None" ]; then
+    print_info "VPC detected: ${VPC_ID_FROM_STACK}"
+
+    ALB_ARNS=$(aws elbv2 describe-load-balancers \
+        --region ${AWS_REGION} \
+        --query "LoadBalancers[?VpcId=='${VPC_ID_FROM_STACK}'].LoadBalancerArn" \
+        --output text 2>/dev/null || echo "")
+
+    if [ -n "$ALB_ARNS" ] && [ "$ALB_ARNS" != "None" ]; then
+        print_info "Deleting ALBs in VPC..."
+        for ALB_ARN in $ALB_ARNS; do
+            print_info "  Deleting: ${ALB_ARN}"
+            aws elbv2 delete-load-balancer \
+                --load-balancer-arn ${ALB_ARN} \
+                --region ${AWS_REGION} 2>/dev/null || true
+        done
+
+        print_info "Waiting for ALB deletion..."
+        aws elbv2 wait load-balancers-deleted \
+            --load-balancer-arns ${ALB_ARNS} \
+            --region ${AWS_REGION} 2>/dev/null || print_warning "ALB deletion wait timed out"
+    else
+        print_info "No ALBs found in VPC"
+    fi
+else
+    print_info "VPC ID not found, skipping ALB cleanup"
+fi
+
+###############################################################################
+# Step 3: Delete CloudFormation Stack
+###############################################################################
+
+print_header "Step 3: Deleting CloudFormation Stack"
 
 if aws cloudformation describe-stacks --stack-name ${STACK_NAME} --region ${AWS_REGION} &> /dev/null; then
     print_info "Stack ${STACK_NAME} exists, deleting..."
@@ -95,10 +176,10 @@ else
 fi
 
 ###############################################################################
-# Step 2: Delete S3 Buckets
+# Step 4: Delete S3 Buckets
 ###############################################################################
 
-print_header "Step 2: Deleting S3 Buckets"
+print_header "Step 4: Deleting S3 Buckets"
 
 # Function to delete S3 bucket
 delete_bucket() {
@@ -138,10 +219,10 @@ delete_bucket "${STACK_NAME}-cfn-templates-${ACCOUNT_ID}"
 delete_bucket "${STACK_NAME}-templates-${ACCOUNT_ID}"
 
 ###############################################################################
-# Step 3: Delete Test Cognito Pools
+# Step 5: Delete Test Cognito Pools
 ###############################################################################
 
-print_header "Step 3: Cleaning Up Cognito Test Pools"
+print_header "Step 5: Cleaning Up Cognito Test Pools"
 
 print_info "Checking for test user pools..."
 TEST_POOLS=$(aws cognito-idp list-user-pools --max-results 60 --region ${AWS_REGION} \
@@ -161,7 +242,7 @@ else
 fi
 
 ###############################################################################
-# Step 4: Summary
+# Step 6: Summary
 ###############################################################################
 
 print_header "Cleanup Complete"

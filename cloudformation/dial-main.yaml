@@ -65,7 +65,6 @@ Parameters:
     Type: String
     Default: 'dial-admins'
     Description: Cognito User Pool name for admins
-    Description: Cognito User Pool name
   
   DisableSelfRegistration:
     Type: String

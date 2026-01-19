@@ -144,7 +144,7 @@ DIAL_NAMESPACE="${DIAL_NAMESPACE:-dial}"
 
 # Helm chart location (AWS Marketplace/ECR)
 CHART_OCI_REPO="${CHART_OCI_REPO:-709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-helm-deployment}"
-CHART_VERSION="${CHART_VERSION:-2026.1.8}"
+CHART_VERSION="${CHART_VERSION:-2026.1.9}"
 
 # Public hosts
 DIAL_PUBLIC_HOST="core.${DOMAIN_NAME}"
