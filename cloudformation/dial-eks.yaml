@@ -211,7 +211,7 @@ Resources:
           - !Ref PrivateSubnet1Id
           - !Ref PrivateSubnet2Id
         EndpointPrivateAccess: true
-        EndpointPublicAccess: false
+        EndpointPublicAccess: true
       Logging:
         ClusterLogging:
           EnabledTypes:
