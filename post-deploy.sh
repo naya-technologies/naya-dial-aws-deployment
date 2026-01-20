@@ -252,20 +252,39 @@ export COGNITO_ADMIN_HOST COGNITO_ADMIN_CLIENT_ID COGNITO_ADMIN_CLIENT_SECRET AD
 
 # Create helm values using Python to avoid YAML issues
 python3 << 'PYEOF'
+import json
 import os
 import yaml
 
 release = os.environ.get('DIAL_RELEASE_NAME', 'dial')
 namespace = os.environ.get('DIAL_NAMESPACE', 'dial')
 core_service = f"{release}-core"
+bedrock_service = f"{release}-bedrock"
 admin_backend_service = f"{release}-admin-backend"
 core_service_url = f"http://{core_service}.{namespace}.svc.cluster.local"
+bedrock_service_url = f"http://{bedrock_service}.{namespace}.svc.cluster.local"
 admin_backend_url = f"http://{admin_backend_service}.{namespace}.svc.cluster.local/"
 
 dial_public_host = os.environ['DIAL_PUBLIC_HOST']
 chat_public_host = os.environ['CHAT_PUBLIC_HOST']
 themes_public_host = os.environ['THEMES_PUBLIC_HOST']
 admin_public_host = os.environ['ADMIN_PUBLIC_HOST']
+
+aidial_config = {
+    "models": {
+        "anthropic.claude-sonnet-4": {
+            "type": "chat",
+            "displayName": "Anthropic (Claude)",
+            "iconUrl": f"https://{themes_public_host}/anthropic.svg",
+            "endpoint": (
+                f"{bedrock_service_url}/openai/deployments/"
+                "us.anthropic.claude-sonnet-4-5-20250929-v1:0/chat/completions"
+            ),
+        }
+    },
+    "roles": {"default": {"limits": {"anthropic.claude-v1": {}}}},
+}
+aidial_config_json = json.dumps(aidial_config, indent=2)
 
 helm_values = {
     'global': {
@@ -318,7 +337,8 @@ helm_values = {
                 'aidial.identityProviders.cognito.issuerPattern': '^https:\\/\\/cognito-idp\\.' + os.environ['REGION'] + '\\.amazonaws\\.com.+$'
             },
             'secrets': {
-                'aidial.identityProviders.cognito.loggingSalt': os.environ['COGNITO_LOGGING_SALT']
+                'aidial.identityProviders.cognito.loggingSalt': os.environ['COGNITO_LOGGING_SALT'],
+                'aidial.config.json': aidial_config_json
             }
         },
         'chat': {
@@ -394,10 +414,10 @@ helm_values = {
                 'NEXTAUTH_URL': 'https://' + admin_public_host,
                 'DIAL_ADMIN_API_URL': admin_backend_url,
                 'AUTH_COGNITO_HOST': os.environ['COGNITO_ADMIN_HOST'],
-                'AUTH_COGNITO_CLIENT_ID': os.environ['COGNITO_ADMIN_CLIENT_ID']
+                'AUTH_COGNITO_CLIENT_ID': os.environ['COGNITO_ADMIN_CLIENT_ID'],
+                'AUTH_COGNITO_SECRET': os.environ['COGNITO_ADMIN_CLIENT_SECRET'],
             },
             'secrets': {
-                'AUTH_COGNITO_SECRET': os.environ['COGNITO_ADMIN_CLIENT_SECRET'],
                 'NEXTAUTH_SECRET': os.environ['ADMIN_NEXTAUTH_SECRET']
             }
         },
