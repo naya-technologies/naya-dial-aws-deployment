@@ -149,6 +149,18 @@ Resources:
       SecurityGroupIds:
         - !Ref VPCESecurityGroup
 
+  CognitoIdpVPCEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPCId
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.cognito-idp'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - !Ref PrivateSubnet2Id
+      SecurityGroupIds:
+        - !Ref VPCESecurityGroup
+
   # EKS Cluster IAM Role
   EKSClusterRole:
     Type: AWS::IAM::Role
@@ -200,6 +212,7 @@ Resources:
       - STSEndpoint
       - EKSVPCEndpoint
       - ELBVPCEndpoint
+      - CognitoIdpVPCEndpoint
     Properties:
       Name: !Ref ClusterName
       Version: !Ref KubernetesVersion
