@@ -531,17 +531,26 @@ echo "🌐 DNS Configuration Required"
 echo "=========================================="
 echo ""
 
-ALB_DNS=$(kubectl get ingress "${DIAL_RELEASE_NAME}-chat" -n "$DIAL_NAMESPACE" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "pending...")
+get_ingress_hostname() {
+    local ingress_name="$1"
+    local hostname
+    hostname=$(kubectl get ingress "$ingress_name" -n "$DIAL_NAMESPACE" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+    if [ -z "$hostname" ]; then
+        echo "pending..."
+    else
+        echo "$hostname"
+    fi
+}
 
-if [ "$ALB_DNS" = "pending..." ] || [ -z "$ALB_DNS" ]; then
-    echo "⏳ Load Balancer still provisioning..."
-    echo "   Run this command in a few minutes to get the ALB DNS:"
+CHAT_ALB_DNS=$(get_ingress_hostname "${DIAL_RELEASE_NAME}-chat")
+ADMIN_ALB_DNS=$(get_ingress_hostname "${DIAL_RELEASE_NAME}-admin-frontend")
+THEMES_ALB_DNS=$(get_ingress_hostname "${DIAL_RELEASE_NAME}-themes")
+CORE_ALB_DNS=$(get_ingress_hostname "${DIAL_RELEASE_NAME}-core")
+
+if [ "$CHAT_ALB_DNS" = "pending..." ] || [ "$ADMIN_ALB_DNS" = "pending..." ] || [ "$THEMES_ALB_DNS" = "pending..." ] || [ "$CORE_ALB_DNS" = "pending..." ]; then
+    echo "⏳ One or more Load Balancers still provisioning..."
+    echo "   Run this command in a few minutes to check:"
     echo "   kubectl get ingress -n ${DIAL_NAMESPACE}"
-    echo ""
-    echo "Then add DNS records pointing to the ALB DNS name."
-else
-    echo "✅ Application Load Balancer DNS:"
-    echo "   $ALB_DNS"
     echo ""
 fi
 
@@ -551,25 +560,25 @@ echo ""
 echo "Record 1:"
 echo "  Type:  CNAME"
 echo "  Name:  ${CHAT_PUBLIC_HOST}"
-echo "  Value: ${ALB_DNS}"
+echo "  Value: ${CHAT_ALB_DNS}"
 echo "  TTL:   300"
 echo ""
 echo "Record 2:"
 echo "  Type:  CNAME"  
 echo "  Name:  ${ADMIN_PUBLIC_HOST}"
-echo "  Value: ${ALB_DNS}"
+echo "  Value: ${ADMIN_ALB_DNS}"
 echo "  TTL:   300"
 echo ""
 echo "Record 3:"
 echo "  Type:  CNAME"
 echo "  Name:  ${THEMES_PUBLIC_HOST}"
-echo "  Value: ${ALB_DNS}"
+echo "  Value: ${THEMES_ALB_DNS}"
 echo "  TTL:   300"
 echo ""
 echo "Record 4:"
 echo "  Type:  CNAME"
 echo "  Name:  ${DIAL_PUBLIC_HOST}"
-echo "  Value: ${ALB_DNS}"
+echo "  Value: ${CORE_ALB_DNS}"
 echo "  TTL:   300"
 echo ""
 echo "=========================================="
