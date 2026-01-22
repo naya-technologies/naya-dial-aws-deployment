@@ -75,6 +75,18 @@ if [ -z "$ACCOUNT_ID" ]; then
 fi
 print_success "AWS Account ID: $ACCOUNT_ID"
 
+print_info "Ensuring AWS License Manager service-linked role exists..."
+if aws iam get-role --role-name AWSServiceRoleForAWSLicenseManagerRole &> /dev/null; then
+    print_success "License Manager service role exists"
+else
+    print_info "Creating License Manager service-linked role..."
+    if aws iam create-service-linked-role --aws-service-name license-manager.amazonaws.com &> /dev/null; then
+        print_success "License Manager service role created"
+    else
+        print_warning "Failed to create License Manager service role (continuing)"
+    fi
+fi
+
 # Step 2: Prepare templates
 print_header "Step 2: Preparing CloudFormation Templates"
 
