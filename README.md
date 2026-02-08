@@ -108,7 +108,7 @@ That's it! The script will:
 bash post-deploy.sh
 ```
  
-✅ DIAL Deployment Complete!"
+✅ DIAL Deployment Complete!
 
 
 Files created:  
@@ -116,11 +116,12 @@ Files created:
   📄 helm-values.yaml        - Helm values used  
 
 ⚠️  FINAL STEPS:
-  1. Add the 3 DNS records shown above
+  1. Add the 5 DNS records shown above
   2. Wait 5-30 minutes for DNS propagation
   3. Access DIAL:
-     - Chat:  https://chat.${DOMAIN_NAME}"
-     - Admin: https://admin.${DOMAIN_NAME}"
+     - Chat:  https://chat.${DOMAIN_NAME}
+     - Admin: https://admin.${DOMAIN_NAME}
+     - Grafana: https://grafana.${DOMAIN_NAME}
 
 🔍 Verify deployment:
   kubectl get pods -n dial
@@ -333,12 +334,13 @@ kubectl logs <POD_NAME> -n dial
 
 ### Problem: Out of memory or CPU
 
-Scale up your node group:
+With EKS Auto Mode, compute scales automatically based on workloads.
+
+If you still hit CPU/memory limits:
 ```bash
-# Edit parameters.conf and increase EKS_NODE_DESIRED_SIZE
-# Then update the stack:
-bash install.sh
-# Answer "yes" when asked about updating existing stack
+# 1) Check requests/limits for pods and adjust them if needed
+# 2) If you changed CloudFormation parameters (e.g. EKSAutoNodePools), recreate the stack:
+bash cleanup.sh && bash deploy.sh
 ```
 
 ---

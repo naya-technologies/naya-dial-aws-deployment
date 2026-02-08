@@ -68,6 +68,29 @@ if [ "$CONFIRM" != "yes" ]; then
 fi
 
 ###############################################################################
+# Step 0: Empty DIAL storage bucket (if any)
+###############################################################################
+
+print_header "Step 0: Emptying DIAL storage bucket (if any)"
+
+if aws cloudformation describe-stacks --stack-name ${STACK_NAME} --region ${AWS_REGION} &> /dev/null; then
+    STORAGE_BUCKET_NAME=$(aws cloudformation describe-stacks \
+        --stack-name ${STACK_NAME} \
+        --region ${AWS_REGION} \
+        --query "Stacks[0].Outputs[?OutputKey=='S3BucketName'].OutputValue" \
+        --output text 2>/dev/null || echo "")
+
+    if [ -n "$STORAGE_BUCKET_NAME" ] && [ "$STORAGE_BUCKET_NAME" != "None" ]; then
+        print_info "Emptying storage bucket: ${STORAGE_BUCKET_NAME}"
+        aws s3 rm "s3://${STORAGE_BUCKET_NAME}" --recursive --region ${AWS_REGION} 2>/dev/null || true
+    else
+        print_info "Storage bucket output not found, skipping"
+    fi
+else
+    print_info "Stack ${STACK_NAME} does not exist, skipping"
+fi
+
+###############################################################################
 # Step 1: Disable RDS deletion protection (if present)
 ###############################################################################
 
@@ -149,10 +172,51 @@ else
 fi
 
 ###############################################################################
-# Step 3: Delete CloudFormation Stack
+# Step 3: Delete EKS security groups in VPC (if any)
 ###############################################################################
 
-print_header "Step 3: Deleting CloudFormation Stack"
+print_header "Step 3: Deleting EKS security groups in VPC (if any)"
+
+EKS_CLUSTER_NAME=$(aws cloudformation describe-stacks \
+    --stack-name ${STACK_NAME} \
+    --region ${AWS_REGION} \
+    --query "Stacks[0].Outputs[?OutputKey=='EKSClusterName'].OutputValue" \
+    --output text 2>/dev/null || echo "")
+
+if [ -n "$VPC_ID_FROM_STACK" ] && [ "$VPC_ID_FROM_STACK" != "None" ] && [ -n "$EKS_CLUSTER_NAME" ] && [ "$EKS_CLUSTER_NAME" != "None" ]; then
+    SG_IDS_1=$(aws ec2 describe-security-groups \
+        --filters Name=vpc-id,Values=${VPC_ID_FROM_STACK} Name=tag:aws:eks:cluster-name,Values=${EKS_CLUSTER_NAME} \
+        --region ${AWS_REGION} \
+        --query "SecurityGroups[?GroupName!='default'].GroupId" \
+        --output text 2>/dev/null || echo "")
+
+    SG_IDS_2=$(aws ec2 describe-security-groups \
+        --filters Name=vpc-id,Values=${VPC_ID_FROM_STACK} Name=tag:kubernetes.io/cluster/${EKS_CLUSTER_NAME},Values=owned,shared \
+        --region ${AWS_REGION} \
+        --query "SecurityGroups[?GroupName!='default'].GroupId" \
+        --output text 2>/dev/null || echo "")
+
+    SG_IDS=$(printf "%s\n%s\n" "$SG_IDS_1" "$SG_IDS_2" | tr ' ' '\n' | sort -u | sed '/^$/d')
+
+    if [ -n "$SG_IDS" ]; then
+        for SG_ID in $SG_IDS; do
+            print_info "Deleting security group: ${SG_ID}"
+            aws ec2 delete-security-group \
+                --group-id ${SG_ID} \
+                --region ${AWS_REGION} 2>/dev/null || true
+        done
+    else
+        print_info "No EKS security groups found in VPC"
+    fi
+else
+    print_info "VPC or EKS cluster name not found, skipping"
+fi
+
+###############################################################################
+# Step 4: Delete CloudFormation Stack
+###############################################################################
+
+print_header "Step 4: Deleting CloudFormation Stack"
 
 if aws cloudformation describe-stacks --stack-name ${STACK_NAME} --region ${AWS_REGION} &> /dev/null; then
     print_info "Stack ${STACK_NAME} exists, deleting..."
@@ -176,10 +240,10 @@ else
 fi
 
 ###############################################################################
-# Step 4: Delete S3 Buckets
+# Step 5: Delete S3 Buckets
 ###############################################################################
 
-print_header "Step 4: Deleting S3 Buckets"
+print_header "Step 5: Deleting S3 Buckets"
 
 # Function to delete S3 bucket
 delete_bucket() {
@@ -187,20 +251,9 @@ delete_bucket() {
     
     if aws s3 ls "s3://${BUCKET_NAME}" --region ${AWS_REGION} &> /dev/null; then
         print_info "Deleting bucket: ${BUCKET_NAME}"
-        
-        # Remove all objects first
-        print_info "  Removing objects..."
+
+        print_info "  Emptying bucket..."
         aws s3 rm "s3://${BUCKET_NAME}" --recursive --region ${AWS_REGION} 2>/dev/null || true
-        
-        # Remove all versions if versioning is enabled
-        print_info "  Removing versions..."
-        aws s3api delete-objects \
-            --bucket ${BUCKET_NAME} \
-            --delete "$(aws s3api list-object-versions \
-                --bucket ${BUCKET_NAME} \
-                --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}' \
-                --region ${AWS_REGION} 2>/dev/null)" \
-            --region ${AWS_REGION} 2>/dev/null || true
         
         # Delete bucket
         print_info "  Deleting bucket..."

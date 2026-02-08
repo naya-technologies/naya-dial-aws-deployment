@@ -7,7 +7,7 @@ Parameters:
   
   KubernetesVersion:
     Type: String
-    Default: '1.31'
+    Default: '1.33'
   
   VPCId:
     Type: String
@@ -25,25 +25,10 @@ Parameters:
     Type: String
     Description: Private route table ID for S3 Gateway endpoint
   
-  NodeInstanceType:
-    Type: String
-    Default: 'm5.large'
-    Description: EC2 instance type for EKS nodes
-  
-  NodeMinSize:
-    Type: Number
-    Default: 2
-    Description: Minimum number of nodes
-  
-  NodeMaxSize:
-    Type: Number
-    Default: 10
-    Description: Maximum number of nodes
-  
-  NodeDesiredSize:
-    Type: Number
-    Default: 3
-    Description: Desired number of nodes
+  AutoNodePools:
+    Type: CommaDelimitedList
+    Default: "system,general-purpose"
+    Description: Built-in EKS Auto Mode NodePools to enable (system,general-purpose)
 
 Resources:
   # VPC Endpoints Security Group
@@ -172,10 +157,16 @@ Resources:
           - Effect: Allow
             Principal:
               Service: eks.amazonaws.com
-            Action: 'sts:AssumeRole'
+            Action:
+              - 'sts:AssumeRole'
+              - 'sts:TagSession'
       ManagedPolicyArns:
         - 'arn:aws:iam::aws:policy/AmazonEKSClusterPolicy'
-        - 'arn:aws:iam::aws:policy/AmazonEKSVPCResourceController'
+        - 'arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly'
+        - 'arn:aws:iam::aws:policy/AmazonEKSComputePolicy'
+        - 'arn:aws:iam::aws:policy/AmazonEKSBlockStoragePolicy'
+        - 'arn:aws:iam::aws:policy/AmazonEKSLoadBalancingPolicy'
+        - 'arn:aws:iam::aws:policy/AmazonEKSNetworkingPolicy'
       Tags:
         - Key: Name
           Value: !Sub '${ClusterName}-cluster-role'
@@ -193,10 +184,8 @@ Resources:
               Service: ec2.amazonaws.com
             Action: 'sts:AssumeRole'
       ManagedPolicyArns:
-        - 'arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy'
-        - 'arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy'
-        - 'arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly'
-        - 'arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore'
+        - 'arn:aws:iam::aws:policy/AmazonEKSWorkerNodeMinimalPolicy'
+        - 'arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPullOnly'
       Tags:
         - Key: Name
           Value: !Sub '${ClusterName}-node-role'
@@ -217,9 +206,22 @@ Resources:
       Name: !Ref ClusterName
       Version: !Ref KubernetesVersion
       RoleArn: !GetAtt EKSClusterRole.Arn
+      AccessConfig:
+        AuthenticationMode: API
+      KubernetesNetworkConfig:
+        ServiceIpv4Cidr: 172.20.0.0/16
+        IpFamily: ipv4
+        ElasticLoadBalancing:
+          Enabled: true
+      # Enable EKS Auto Mode compute + block storage capabilities (no managed node groups).
+      ComputeConfig:
+        Enabled: true
+        NodePools: !Ref AutoNodePools
+        NodeRoleArn: !GetAtt EKSNodeRole.Arn
+      StorageConfig:
+        BlockStorage:
+          Enabled: true
       ResourcesVpcConfig:
-        SecurityGroupIds:
-          - !Ref EKSSecurityGroupId
         SubnetIds:
           - !Ref PrivateSubnet1Id
           - !Ref PrivateSubnet2Id
@@ -237,48 +239,6 @@ Resources:
         - Key: Name
           Value: !Ref ClusterName
 
-  EKSNodeLaunchTemplate:
-    Type: AWS::EC2::LaunchTemplate
-    Properties:
-      LaunchTemplateData:
-        BlockDeviceMappings:
-          - DeviceName: /dev/xvda
-            Ebs:
-              DeleteOnTermination: true
-              VolumeSize: 100
-        NetworkInterfaces:
-          - DeviceIndex: 0
-            Groups:
-              - !Ref EKSSecurityGroupId
-              - !GetAtt EKSCluster.ClusterSecurityGroupId
-
-  # EKS Node Group
-  EKSNodeGroup:
-    Type: AWS::EKS::Nodegroup
-    DependsOn: EKSCluster
-    Properties:
-      ClusterName: !Ref ClusterName
-      NodegroupName: !Sub '${ClusterName}-ng-1'
-      NodeRole: !GetAtt EKSNodeRole.Arn
-      LaunchTemplate:
-        Id: !Ref EKSNodeLaunchTemplate
-        Version: !GetAtt EKSNodeLaunchTemplate.LatestVersionNumber
-      Subnets:
-        - !Ref PrivateSubnet1Id
-        - !Ref PrivateSubnet2Id
-      ScalingConfig:
-        MinSize: !Ref NodeMinSize
-        MaxSize: !Ref NodeMaxSize
-        DesiredSize: !Ref NodeDesiredSize
-      InstanceTypes:
-        - !Ref NodeInstanceType
-        - t3.large
-        - t3a.large
-        - m5a.large
-      AmiType: AL2_x86_64
-      Tags:
-        Name: !Sub '${ClusterName}-ng-1'
-
   # OIDC Provider
   OIDCProvider:
     Type: AWS::IAM::OIDCProvider
@@ -293,32 +253,25 @@ Resources:
         - Key: Name
           Value: !Sub '${ClusterName}-oidc-provider'
 
-  # EKS Addon - VPC CNI
-  VPCCNIAddon:
+  # Optional: match dial-poc baseline addons (managed by EKS)
+  PodIdentityAgentAddon:
     Type: AWS::EKS::Addon
-    DependsOn: EKSNodeGroup
+    DependsOn: EKSCluster
     Properties:
       ClusterName: !Ref ClusterName
-      AddonName: vpc-cni
+      AddonName: eks-pod-identity-agent
       ResolveConflicts: OVERWRITE
 
-  # EKS Addon - CoreDNS
-  CoreDNSAddon:
+  MetricsServerAddon:
     Type: AWS::EKS::Addon
-    DependsOn: EKSNodeGroup
+    DependsOn: EKSCluster
     Properties:
       ClusterName: !Ref ClusterName
-      AddonName: coredns
+      AddonName: metrics-server
       ResolveConflicts: OVERWRITE
-
-  # EKS Addon - kube-proxy
-  KubeProxyAddon:
-    Type: AWS::EKS::Addon
-    DependsOn: EKSNodeGroup
-    Properties:
-      ClusterName: !Ref ClusterName
-      AddonName: kube-proxy
-      ResolveConflicts: OVERWRITE
+      ConfigurationValues: |
+        nodeSelector:
+          karpenter.sh/nodepool: system
 
 Outputs:
   ClusterName:

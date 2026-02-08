@@ -15,28 +15,13 @@ Parameters:
   
   KubernetesVersion:
     Type: String
-    Default: '1.31'
+    Default: '1.33'
     Description: Kubernetes version
   
-  EKSNodeInstanceType:
-    Type: String
-    Default: 'm5.large'
-    Description: EC2 instance type for EKS nodes
-  
-  EKSNodeMinSize:
-    Type: Number
-    Default: 2
-    Description: Minimum number of EKS nodes
-  
-  EKSNodeMaxSize:
-    Type: Number
-    Default: 10
-    Description: Maximum number of EKS nodes
-  
-  EKSNodeDesiredSize:
-    Type: Number
-    Default: 3
-    Description: Desired number of EKS nodes
+  EKSAutoNodePools:
+    Type: CommaDelimitedList
+    Default: "system,general-purpose"
+    Description: Built-in EKS Auto Mode NodePools to enable (system,general-purpose)
   
   # Database Configuration
   DBMasterUsername:
@@ -121,10 +106,47 @@ Resources:
         PrivateSubnet2Id: !GetAtt VPCStack.Outputs.PrivateSubnet2Id
         EKSSecurityGroupId: !GetAtt VPCStack.Outputs.EKSSecurityGroupId
         PrivateRouteTableId: !GetAtt VPCStack.Outputs.PrivateRouteTableId
-        NodeInstanceType: !Ref EKSNodeInstanceType
-        NodeMinSize: !Ref EKSNodeMinSize
-        NodeMaxSize: !Ref EKSNodeMaxSize
-        NodeDesiredSize: !Ref EKSNodeDesiredSize
+        # Nested stack Parameters values must be strings; join list into comma-separated string.
+        AutoNodePools: !Join [",", !Ref EKSAutoNodePools]
+
+  # EKS Auto Mode creates its own ClusterSecurityGroupId (used by nodes). Our VPCStack security groups
+  # are intentionally locked down, so we must explicitly allow ALB <-> node traffic against the actual
+  # cluster SG to avoid 504/Target.Timeout on ALB target groups.
+  EKSClusterSecurityGroupIngressFromALB:
+    Type: AWS::EC2::SecurityGroupIngress
+    DependsOn:
+      - VPCStack
+      - EKSStack
+    Properties:
+      GroupId: !GetAtt EKSStack.Outputs.ClusterSecurityGroupId
+      IpProtocol: tcp
+      FromPort: 0
+      ToPort: 65535
+      SourceSecurityGroupId: !GetAtt VPCStack.Outputs.ALBSecurityGroupId
+
+  ALBSecurityGroupEgressToEKSClusterSecurityGroup:
+    Type: AWS::EC2::SecurityGroupEgress
+    DependsOn:
+      - VPCStack
+      - EKSStack
+    Properties:
+      GroupId: !GetAtt VPCStack.Outputs.ALBSecurityGroupId
+      IpProtocol: -1
+      DestinationSecurityGroupId: !GetAtt EKSStack.Outputs.ClusterSecurityGroupId
+
+  # Allow EKS Auto Mode nodes to reach Interface VPC endpoints (Bedrock/Secrets Manager/etc).
+  # VPCStack creates the endpoint security group; permit from the actual EKS cluster SG.
+  VPCEndpointSecurityGroupIngressFromEKSClusterSecurityGroup:
+    Type: AWS::EC2::SecurityGroupIngress
+    DependsOn:
+      - VPCStack
+      - EKSStack
+    Properties:
+      GroupId: !GetAtt VPCStack.Outputs.VPCESecurityGroupId
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      SourceSecurityGroupId: !GetAtt EKSStack.Outputs.ClusterSecurityGroupId
 
   # IAM Roles for IRSA
   IAMStack:

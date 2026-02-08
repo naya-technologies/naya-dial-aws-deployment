@@ -135,8 +135,8 @@ echo "Stack Name:      ${STACK_NAME}"
 echo "Region:          ${AWS_REGION}"
 echo "Domain:          ${DOMAIN_NAME}"
 echo "EKS Cluster:     ${EKS_CLUSTER_NAME}"
-echo "EKS Instance:    ${EKS_NODE_INSTANCE_TYPE:-m5.large}"
-echo "EKS Nodes:       ${EKS_NODE_DESIRED_SIZE:-3} (min: ${EKS_NODE_MIN_SIZE:-2}, max: ${EKS_NODE_MAX_SIZE:-10})"
+echo "EKS Auto Mode:   enabled"
+echo "NodePools:       ${EKS_AUTO_NODE_POOLS:-system,general-purpose}"
 echo "Self-Register:   ${ALLOW_SELF_REGISTRATION}"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
@@ -158,10 +158,8 @@ PARAMS="${PARAMS} ParameterKey=PublicSubnet1Cidr,ParameterValue=${PUBLIC_SUBNET_
 PARAMS="${PARAMS} ParameterKey=PublicSubnet2Cidr,ParameterValue=${PUBLIC_SUBNET_2_CIDR:-10.0.2.0/24}"
 PARAMS="${PARAMS} ParameterKey=PrivateSubnet1Cidr,ParameterValue=${PRIVATE_SUBNET_1_CIDR:-10.0.10.0/24}"
 PARAMS="${PARAMS} ParameterKey=PrivateSubnet2Cidr,ParameterValue=${PRIVATE_SUBNET_2_CIDR:-10.0.11.0/24}"
-PARAMS="${PARAMS} ParameterKey=EKSNodeInstanceType,ParameterValue=${EKS_NODE_INSTANCE_TYPE:-m5.large}"
-PARAMS="${PARAMS} ParameterKey=EKSNodeMinSize,ParameterValue=${EKS_NODE_MIN_SIZE:-2}"
-PARAMS="${PARAMS} ParameterKey=EKSNodeMaxSize,ParameterValue=${EKS_NODE_MAX_SIZE:-10}"
-PARAMS="${PARAMS} ParameterKey=EKSNodeDesiredSize,ParameterValue=${EKS_NODE_DESIRED_SIZE:-3}"
+# Quote the value so AWS CLI shorthand parser doesn't treat the comma as a list.
+PARAMS="${PARAMS} ParameterKey=EKSAutoNodePools,ParameterValue=\"${EKS_AUTO_NODE_POOLS:-system,general-purpose}\""
 
 # Check if stack exists
 if aws cloudformation describe-stacks --stack-name ${STACK_NAME} --region ${AWS_REGION} &> /dev/null; then
