@@ -70,7 +70,8 @@ elif [ "$DB_PORT" != "5432" ]; then
 fi
 COGNITO_POOL_ID=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="CognitoUserPoolId") | .OutputValue')
 COGNITO_CLIENT_ID=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="CognitoClientId") | .OutputValue')
-COGNITO_ADMIN_POOL_ID=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="AdminCognitoUserPoolId") | .OutputValue')
+# Use a single Cognito user pool with separate app clients for chat and admin.
+COGNITO_ADMIN_POOL_ID="$COGNITO_POOL_ID"
 COGNITO_ADMIN_CLIENT_ID=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="AdminCognitoClientId") | .OutputValue')
 CORE_ROLE_ARN=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="CoreRoleArn") | .OutputValue')
 BEDROCK_ROLE_ARN=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="BedrockRoleArn") | .OutputValue')
@@ -115,7 +116,7 @@ COGNITO_CLIENT_SECRET=$(aws cognito-idp describe-user-pool-client \
     --output text)
 
 COGNITO_ADMIN_CLIENT_SECRET=$(aws cognito-idp describe-user-pool-client \
-    --user-pool-id "$COGNITO_ADMIN_POOL_ID" \
+    --user-pool-id "$COGNITO_POOL_ID" \
     --client-id "$COGNITO_ADMIN_CLIENT_ID" \
     --region "$REGION" \
     --query 'UserPoolClient.ClientSecret' \
@@ -186,7 +187,7 @@ GRAFANA_LINK="${GRAFANA_LINK:-https://${GRAFANA_PUBLIC_HOST}}"
 # Construct URLs
 COGNITO_HOST="https://cognito-idp.${REGION}.amazonaws.com/${COGNITO_POOL_ID}"
 COGNITO_JWKS_URL="${COGNITO_HOST}/.well-known/jwks.json"
-COGNITO_ADMIN_HOST="https://cognito-idp.${REGION}.amazonaws.com/${COGNITO_ADMIN_POOL_ID}"
+COGNITO_ADMIN_HOST="$COGNITO_HOST"
 
 # Save outputs
 echo ""

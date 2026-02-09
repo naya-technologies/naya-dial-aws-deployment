@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'DIAL Cognito User Pools - Separate pools for Users and Admins'
+Description: 'DIAL Cognito User Pool - Single pool with separate app clients for Users and Admins'
 
 Parameters:
   UserPoolName:
@@ -10,7 +10,7 @@ Parameters:
   AdminUserPoolName:
     Type: String
     Default: dial-admins
-    Description: Name for the Admin User Pool
+    Description: (Deprecated) Admin pool name. Single pool is used; admin uses a separate app client.
   
   DomainName:
     Type: String
@@ -109,63 +109,14 @@ Resources:
         IdToken: minutes
 
   ###############################################################################
-  # User Pool for Admins
+  # Admin App Client (same User Pool)
   ###############################################################################
-  
-  AdminUserPool:
-    Type: AWS::Cognito::UserPool
-    Properties:
-      UserPoolName: !Ref AdminUserPoolName
-      UsernameConfiguration:
-        CaseSensitive: false
-      UsernameAttributes:
-        - email
-      AutoVerifiedAttributes:
-        - email
-      AdminCreateUserConfig:
-        AllowAdminCreateUserOnly: true  # Always true for admin pool
-      Schema:
-        - Name: email
-          AttributeDataType: String
-          Required: true
-          Mutable: true
-        - Name: name
-          AttributeDataType: String
-          Required: true
-          Mutable: true
-        - Name: role
-          AttributeDataType: String
-          Mutable: true
-      Policies:
-        PasswordPolicy:
-          MinimumLength: 12  # Stronger password for admins
-          RequireUppercase: true
-          RequireLowercase: true
-          RequireNumbers: true
-          RequireSymbols: true
-      UserAttributeUpdateSettings:
-        AttributesRequireVerificationBeforeUpdate:
-          - email
-      AccountRecoverySetting:
-        RecoveryMechanisms:
-          - Name: verified_email
-            Priority: 1
-      UserPoolTags:
-        Name: !Sub '${UserPoolName}-admin'
-        Type: 'Administrators'
-
-  AdminUserPoolDomain:
-    Type: AWS::Cognito::UserPoolDomain
-    DependsOn: AdminUserPool
-    Properties:
-      Domain: !Sub 'dial-admin-${AWS::AccountId}'
-      UserPoolId: !Ref AdminUserPool
 
   AdminAppClient:
     Type: AWS::Cognito::UserPoolClient
     Properties:
       ClientName: !Sub '${UserPoolName}-admin-client'
-      UserPoolId: !Ref AdminUserPool
+      UserPoolId: !Ref UserPool
       GenerateSecret: true
       ExplicitAuthFlows:
         - ALLOW_CUSTOM_AUTH
@@ -241,14 +192,14 @@ Outputs:
   ###############################################################################
   
   AdminUserPoolId:
-    Description: Cognito User Pool ID (Admins)
-    Value: !Ref AdminUserPool
+    Description: Cognito User Pool ID (Admins) - same as UserPoolId
+    Value: !Ref UserPool
     Export:
       Name: !Sub '${AWS::StackName}-AdminUserPoolId'
 
   AdminUserPoolArn:
-    Description: Cognito User Pool ARN (Admins)
-    Value: !GetAtt AdminUserPool.Arn
+    Description: Cognito User Pool ARN (Admins) - same as UserPoolArn
+    Value: !GetAtt UserPool.Arn
 
   AdminClientId:
     Description: Cognito App Client ID (Admin)
@@ -259,20 +210,20 @@ Outputs:
   AdminClientSecret:
     Description: Cognito App Client Secret (Admin) - retrieve via AWS CLI
     Value: !Sub |
-      Run: aws cognito-idp describe-user-pool-client --user-pool-id ${AdminUserPool} --client-id ${AdminAppClient} --query 'UserPoolClient.ClientSecret' --output text
+      Run: aws cognito-idp describe-user-pool-client --user-pool-id ${UserPool} --client-id ${AdminAppClient} --query 'UserPoolClient.ClientSecret' --output text
 
   AdminCognitoIssuerUrl:
     Description: Cognito Issuer URL for OIDC (Admin)
-    Value: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${AdminUserPool}'
+    Value: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}'
     Export:
       Name: !Sub '${AWS::StackName}-AdminIssuerUrl'
 
   AdminCognitoJWKSUrl:
     Description: Cognito JWKS URL (Admin)
-    Value: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${AdminUserPool}/.well-known/jwks.json'
+    Value: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}/.well-known/jwks.json'
     Export:
       Name: !Sub '${AWS::StackName}-AdminJWKSUrl'
 
   AdminCognitoHostedUIUrl:
     Description: Cognito Hosted UI URL (Admin)
-    Value: !Sub 'https://${AdminUserPoolDomain}.auth.${AWS::Region}.amazoncognito.com'
+    Value: !Sub 'https://${UserPoolDomain}.auth.${AWS::Region}.amazoncognito.com'

@@ -38,6 +38,47 @@ print_error() {
     echo -e "${RED}✗ $1${NC}"
 }
 
+# Empty S3 bucket including versioned objects and delete markers.
+empty_bucket() {
+    local BUCKET_NAME=$1
+    if [ -z "$BUCKET_NAME" ] || [ "$BUCKET_NAME" = "None" ]; then
+        return 0
+    fi
+
+    # Delete current objects
+    aws s3 rm "s3://${BUCKET_NAME}" --recursive --region ${AWS_REGION} 2>/dev/null || true
+
+    # Delete object versions
+    local VERSIONS_JSON
+    VERSIONS_JSON=$(aws s3api list-object-versions \
+        --bucket "${BUCKET_NAME}" \
+        --region ${AWS_REGION} \
+        --query 'Versions[].{Key:Key,VersionId:VersionId}' \
+        --output json 2>/dev/null || echo "[]")
+
+    if [ "$VERSIONS_JSON" != "[]" ]; then
+        aws s3api delete-objects \
+            --bucket "${BUCKET_NAME}" \
+            --region ${AWS_REGION} \
+            --delete "{\"Objects\": ${VERSIONS_JSON}}" 2>/dev/null || true
+    fi
+
+    # Delete delete-markers
+    local MARKERS_JSON
+    MARKERS_JSON=$(aws s3api list-object-versions \
+        --bucket "${BUCKET_NAME}" \
+        --region ${AWS_REGION} \
+        --query 'DeleteMarkers[].{Key:Key,VersionId:VersionId}' \
+        --output json 2>/dev/null || echo "[]")
+
+    if [ "$MARKERS_JSON" != "[]" ]; then
+        aws s3api delete-objects \
+            --bucket "${BUCKET_NAME}" \
+            --region ${AWS_REGION} \
+            --delete "{\"Objects\": ${MARKERS_JSON}}" 2>/dev/null || true
+    fi
+}
+
 # Get script directory
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
@@ -82,7 +123,7 @@ if aws cloudformation describe-stacks --stack-name ${STACK_NAME} --region ${AWS_
 
     if [ -n "$STORAGE_BUCKET_NAME" ] && [ "$STORAGE_BUCKET_NAME" != "None" ]; then
         print_info "Emptying storage bucket: ${STORAGE_BUCKET_NAME}"
-        aws s3 rm "s3://${STORAGE_BUCKET_NAME}" --recursive --region ${AWS_REGION} 2>/dev/null || true
+        empty_bucket "${STORAGE_BUCKET_NAME}"
     else
         print_info "Storage bucket output not found, skipping"
     fi
@@ -253,7 +294,7 @@ delete_bucket() {
         print_info "Deleting bucket: ${BUCKET_NAME}"
 
         print_info "  Emptying bucket..."
-        aws s3 rm "s3://${BUCKET_NAME}" --recursive --region ${AWS_REGION} 2>/dev/null || true
+        empty_bucket "${BUCKET_NAME}"
         
         # Delete bucket
         print_info "  Deleting bucket..."
