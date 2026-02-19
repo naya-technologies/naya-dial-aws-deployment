@@ -315,7 +315,7 @@ aws eks update-kubeconfig --name dial-cluster --region us-east-2
 **Checklist**:
 1. ✅ DNS records point to the correct Load Balancer DNS?
 2. ✅ Waited at least 10 minutes for DNS to propagate?
-3. ✅ HTTPS certificate validated (if using auto mode)?
+3. ✅ HTTPS certificate validated?
 4. ✅ Helm installation completed successfully?
 
 Check certificate status:
@@ -334,12 +334,12 @@ kubectl logs <POD_NAME> -n dial
 
 ### Problem: Out of memory or CPU
 
-With EKS Auto Mode, compute scales automatically based on workloads.
+With managed EKS node groups, compute is fixed unless you change node group sizes.
 
 If you still hit CPU/memory limits:
 ```bash
 # 1) Check requests/limits for pods and adjust them if needed
-# 2) If you changed CloudFormation parameters (e.g. EKSAutoNodePools), recreate the stack:
+# 2) If you changed node group parameters (Core/Rag/Dynamic node group sizes), recreate the stack:
 bash cleanup.sh && bash deploy.sh
 ```
 

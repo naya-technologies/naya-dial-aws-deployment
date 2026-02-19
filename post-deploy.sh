@@ -75,6 +75,7 @@ COGNITO_ADMIN_POOL_ID="$COGNITO_POOL_ID"
 COGNITO_ADMIN_CLIENT_ID=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="AdminCognitoClientId") | .OutputValue')
 CORE_ROLE_ARN=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="CoreRoleArn") | .OutputValue')
 BEDROCK_ROLE_ARN=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="BedrockRoleArn") | .OutputValue')
+APP_CONTROLLER_ROLE_ARN=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="AppControllerRoleArn") | .OutputValue')
 ALB_CONTROLLER_ROLE_ARN=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="ALBControllerRoleArn") | .OutputValue')
 
 # Get additional info from AWS
@@ -188,6 +189,8 @@ GRAFANA_LINK="${GRAFANA_LINK:-https://${GRAFANA_PUBLIC_HOST}}"
 COGNITO_HOST="https://cognito-idp.${REGION}.amazonaws.com/${COGNITO_POOL_ID}"
 COGNITO_JWKS_URL="${COGNITO_HOST}/.well-known/jwks.json"
 COGNITO_ADMIN_HOST="$COGNITO_HOST"
+AWS_ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+APP_DOCKER_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"
 
 # Save outputs
 echo ""
@@ -201,7 +204,7 @@ cat > deployment-outputs.env << EOF
 
 # AWS Infrastructure
 AWS_REGION="$REGION"
-AWS_ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+AWS_ACCOUNT_ID="$AWS_ACCOUNT_ID"
 EKS_CLUSTER_NAME="$EKS_CLUSTER_NAME"
 VPC_ID="$VPC_ID"
 
@@ -236,6 +239,7 @@ COGNITO_ADMIN_HOST="$COGNITO_ADMIN_HOST"
 # IAM Roles
 CORE_SERVICE_ROLE_ARN="$CORE_ROLE_ARN"
 BEDROCK_SERVICE_ROLE_ARN="$BEDROCK_ROLE_ARN"
+APP_CONTROLLER_SERVICE_ROLE_ARN="$APP_CONTROLLER_ROLE_ARN"
 ALB_CONTROLLER_ROLE_ARN="$ALB_CONTROLLER_ROLE_ARN"
 
 # Security Groups
@@ -278,13 +282,50 @@ echo "📝 Generating Helm values file..."
 # Get ACM certificate ARN from parameters.conf
 ACM_CERTIFICATE_ARN=$(grep "^ACM_CERTIFICATE_ARN=" parameters.conf | cut -d'=' -f2- | tr -d '"')
 if [ -z "$ACM_CERTIFICATE_ARN" ]; then
-    echo "❌ Error: ACM_CERTIFICATE_ARN not found in parameters.conf"
-    echo "   Please run: bash create-certificate.sh"
+    echo "❌ Error: ACM_CERTIFICATE_ARN is empty in parameters.conf"
+    echo "   Please set ACM certificate ARN for *.${DOMAIN_NAME}"
+    echo "   Or run: bash create-certificate.sh"
+    exit 1
+fi
+
+# Validate ACM certificate is usable for this domain in current account/region
+CERT_STATUS="$(aws acm describe-certificate \
+    --certificate-arn "$ACM_CERTIFICATE_ARN" \
+    --region "$REGION" \
+    --query 'Certificate.Status' \
+    --output text 2>/dev/null || true)"
+
+if [ -z "$CERT_STATUS" ] || [ "$CERT_STATUS" = "None" ]; then
+    echo "❌ Error: ACM certificate not found: $ACM_CERTIFICATE_ARN"
+    echo "   Ensure ARN exists in account $(aws sts get-caller-identity --query Account --output text)"
+    echo "   and region ${REGION}"
+    exit 1
+fi
+
+if [ "$CERT_STATUS" != "ISSUED" ]; then
+    echo "❌ Error: ACM certificate is not ISSUED (status: $CERT_STATUS)"
+    echo "   Certificate ARN: $ACM_CERTIFICATE_ARN"
+    exit 1
+fi
+
+WILDCARD_DOMAIN="*.${DOMAIN_NAME}"
+CERT_SANS="$(aws acm describe-certificate \
+    --certificate-arn "$ACM_CERTIFICATE_ARN" \
+    --region "$REGION" \
+    --query 'Certificate.SubjectAlternativeNames' \
+    --output text 2>/dev/null || true)"
+
+if ! printf '%s\n' "$CERT_SANS" | tr '\t' '\n' | grep -Fxq "$WILDCARD_DOMAIN"; then
+    echo "❌ Error: ACM certificate does not include required SAN: ${WILDCARD_DOMAIN}"
+    echo "   Certificate ARN: $ACM_CERTIFICATE_ARN"
+    echo "   Current SANs: $CERT_SANS"
+    echo "   Use a certificate that includes *.${DOMAIN_NAME}"
     exit 1
 fi
 
 # Export all variables for Python
 export REGION VPC_ID EKS_CLUSTER_NAME ALB_CONTROLLER_ROLE_ARN CORE_ROLE_ARN
+export APP_CONTROLLER_ROLE_ARN APP_DOCKER_REGISTRY
 export DOMAIN_NAME DIAL_RELEASE_NAME DIAL_NAMESPACE DIAL_PUBLIC_HOST CHAT_PUBLIC_HOST THEMES_PUBLIC_HOST ADMIN_PUBLIC_HOST
 export ALB_SG ACM_CERTIFICATE_ARN CORE_ENCRYPTION_KEY CORE_ENCRYPTION_SECRET
 export S3_BUCKET REDIS_ENDPOINT REDIS_USER_ID REDIS_CLUSTER COGNITO_JWKS_URL COGNITO_LOGGING_SALT
@@ -307,11 +348,13 @@ bedrock_service = f"{release}-bedrock"
 admin_backend_service = f"{release}-admin-backend"
 analytics_service = f"{release}-realtime-analytics"
 influxdb_service = f"{release}-influxdb"
+app_controller_service = f"{release}-app-controller"
 core_service_url = f"http://{core_service}.{namespace}.svc.cluster.local"
 bedrock_service_url = f"http://{bedrock_service}.{namespace}.svc.cluster.local"
 admin_backend_url = f"http://{admin_backend_service}.{namespace}.svc.cluster.local/"
 analytics_sink_uri = f"http://{analytics_service}.{namespace}.svc.cluster.local:80/data"
 influxdb_url = f"http://{influxdb_service}.{namespace}.svc.cluster.local:8086"
+app_controller_url = f"http://{app_controller_service}.{namespace}.svc.cluster.local:80"
 
 influxdb_org = os.environ.get("INFLUXDB_ORG", "dial")
 influxdb_bucket = os.environ.get("INFLUXDB_BUCKET", "dial-analytics")
@@ -417,6 +460,7 @@ sinks:
 """.strip() + "\n"
             },
             'env': {
+                'aidial.applications.controllerEndpoint': app_controller_url,
                 'aidial.storage.bucket': os.environ['S3_BUCKET'],
                 'aidial.redis.singleServerConfig.address': os.environ['REDIS_ENDPOINT'],
                 'aidial.redis.provider.userId': os.environ['REDIS_USER_ID'],
@@ -494,6 +538,8 @@ sinks:
                 'ingressClassName': 'alb',
                 'hosts': [admin_public_host],
                 'annotations': {
+                    'alb.ingress.kubernetes.io/healthcheck-path': '/health',
+                    'alb.ingress.kubernetes.io/success-codes': '200-399',
                     'alb.ingress.kubernetes.io/security-groups': os.environ['ALB_SG'],
                     'alb.ingress.kubernetes.io/certificate-arn': os.environ['ACM_CERTIFICATE_ARN']
                 }
@@ -502,6 +548,7 @@ sinks:
                 'NEXTAUTH_URL': 'https://' + admin_public_host,
                 'DIAL_ADMIN_API_URL': admin_backend_url,
                 'GRAFANA_LINK': grafana_link,
+                'THEMES_CONFIG_URL': 'https://' + themes_public_host,
                 'AUTH_COGNITO_HOST': os.environ['COGNITO_ADMIN_HOST'],
                 'AUTH_COGNITO_CLIENT_ID': os.environ['COGNITO_ADMIN_CLIENT_ID'],
                 'AUTH_COGNITO_SECRET': os.environ['COGNITO_ADMIN_CLIENT_SECRET'],
@@ -529,12 +576,41 @@ sinks:
             'INFLUX_API_TOKEN': influxdb_token,
         },
     },
+    'rag': {
+        'env': {
+            'DIAL_URL': core_service_url,
+            'DIAL_API_KEY': os.environ['DIAL_API_KEY'],
+        },
+    },
+    'quickapps': {
+        'env': {
+            'DIAL_URL': core_service_url,
+            'REMOTE_DIAL_API_KEY': os.environ['DIAL_API_KEY'],
+        },
+    },
+    'app-controller': {
+        'serviceAccount': {
+            'create': True,
+            'automountServiceAccountToken': True,
+            'annotations': {
+                'eks.amazonaws.com/role-arn': os.environ['APP_CONTROLLER_ROLE_ARN'],
+            },
+        },
+        'env': {
+            'APP_DOCKER_REGISTRY': os.environ['APP_DOCKER_REGISTRY'],
+            'APP_DIAL_BASE_URL': core_service_url,
+            'APP_BUILD_NAMESPACE': namespace,
+            'APP_DEPLOY_NAMESPACE': namespace,
+        },
+    },
     'grafana': {
         # Used by Grafana datasources.yaml via tpl rendering in grafana chart.
         'analyticsToken': influxdb_token,
         'adminPassword': grafana_admin_password,
         'ingress': {
             'annotations': {
+                'alb.ingress.kubernetes.io/healthcheck-path': '/api/health',
+                'alb.ingress.kubernetes.io/success-codes': '200',
                 'alb.ingress.kubernetes.io/certificate-arn': os.environ['ACM_CERTIFICATE_ARN'],
                 'alb.ingress.kubernetes.io/security-groups': os.environ['ALB_SG'],
             },
@@ -565,15 +641,44 @@ echo ""
 echo "Verifying cluster access..."
 kubectl get nodes
 
-# Configure StorageClass for EKS Auto Mode (required for InfluxDB/Grafana persistence)
+# Pin CoreDNS to the dedicated system node group (so core nodes are used only by application pods).
+# CoreDNS is bootstrapped as a self-managed Deployment (not an EKS addon) in this setup.
 echo ""
 echo "=========================================="
-echo "💾 Configuring StorageClass for EKS Auto Mode..."
+echo "🧩 Pinning CoreDNS to system node group..."
 echo "=========================================="
 
-# Do not gate StorageClass creation on presence of "auto" nodes.
-# On fresh Auto Mode clusters there may be 0 nodes at this point, but we still need
-# the StorageClass to exist before Helm installs PVC-based workloads.
+if kubectl -n kube-system get deploy coredns -o json | jq -e '.spec.template.spec.nodeSelector.workload == "system"' >/dev/null 2>&1; then
+    echo "ℹ️  CoreDNS nodeSelector already set to workload=system"
+else
+    kubectl -n kube-system patch deployment coredns \
+        --type merge \
+        -p '{"spec":{"template":{"spec":{"nodeSelector":{"workload":"system"}}}}}' >/dev/null
+    echo "✅ CoreDNS nodeSelector set to workload=system"
+fi
+
+if kubectl -n kube-system get deploy coredns -o json | jq -e '(.spec.template.spec.tolerations // []) | any(.key=="dedicated" and .value=="system" and .effect=="NoSchedule")' >/dev/null 2>&1; then
+    echo "ℹ️  CoreDNS toleration for dedicated=system already present"
+else
+    kubectl -n kube-system patch deployment coredns \
+        --type json \
+        -p='[{"op":"add","path":"/spec/template/spec/tolerations/-","value":{"key":"dedicated","operator":"Equal","value":"system","effect":"NoSchedule"}}]' >/dev/null
+    echo "✅ CoreDNS toleration for dedicated=system added"
+fi
+
+echo "🔄 Restarting CoreDNS to apply scheduling changes..."
+kubectl -n kube-system rollout restart deployment coredns >/dev/null
+kubectl -n kube-system rollout status deployment coredns --timeout=120s >/dev/null || true
+
+# Configure StorageClass for EBS CSI (required for InfluxDB/Grafana persistence)
+echo ""
+echo "=========================================="
+echo "💾 Configuring StorageClass (EBS CSI / gp3)..."
+echo "=========================================="
+
+# Do not gate StorageClass creation on presence of nodes.
+# On fresh clusters there may be 0 nodes at this point, but we still need the StorageClass
+# to exist before Helm installs PVC-based workloads.
 DEFAULT_SC_NAME="$(kubectl get storageclass -o jsonpath='{range .items[?(@.metadata.annotations.storageclass\.kubernetes\.io/is-default-class=="true")]}{.metadata.name}{"\n"}{end}' 2>/dev/null | head -1 || true)"
 if [ -n "${DEFAULT_SC_NAME}" ]; then
     echo "ℹ️  Default StorageClass already set: ${DEFAULT_SC_NAME}. Not changing default StorageClass."
@@ -588,12 +693,7 @@ apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
   name: auto-ebs-gp3
-${AUTO_SC_ANNOTATIONS_BLOCK}allowedTopologies:
-  - matchLabelExpressions:
-      - key: eks.amazonaws.com/compute-type
-        values:
-          - auto
-provisioner: ebs.csi.eks.amazonaws.com
+${AUTO_SC_ANNOTATIONS_BLOCK}provisioner: ebs.csi.aws.com
 volumeBindingMode: WaitForFirstConsumer
 parameters:
   type: gp3
@@ -641,6 +741,40 @@ helm_release_exists() {
     helm list -n "$namespace" -q 2>/dev/null | grep -Fxq "$release"
 }
 
+alb_controller_present() {
+    kubectl get deployment -A -l "app.kubernetes.io/name=aws-load-balancer-controller" --no-headers 2>/dev/null | grep -q .
+}
+
+force_clear_stuck_ingress_finalizers() {
+    local release="$1"
+    local namespace="$2"
+
+    if ! kubectl get namespace "$namespace" >/dev/null 2>&1; then
+        return 0
+    fi
+
+    # Only touch ingress resources that belong to this release and are already terminating.
+    local stuck
+    stuck="$(kubectl -n "$namespace" get ingress -l "app.kubernetes.io/instance=${release}" \
+      -o jsonpath='{range .items[?(@.metadata.deletionTimestamp)]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true)"
+
+    if [ -z "$stuck" ]; then
+        return 0
+    fi
+
+    if alb_controller_present; then
+        return 0
+    fi
+
+    echo "⚠️  ALB controller is not running. Removing stuck ingress finalizers for release '${release}'..."
+    while IFS= read -r ingress_name; do
+        [ -z "$ingress_name" ] && continue
+        kubectl -n "$namespace" patch ingress "$ingress_name" \
+          --type=merge \
+          -p '{"metadata":{"finalizers":[]}}' >/dev/null 2>&1 || true
+    done <<< "$stuck"
+}
+
 wait_for_release_resources_gone() {
     local release="$1"
     local namespace="$2"
@@ -656,6 +790,7 @@ wait_for_release_resources_gone() {
 
         remaining=$(kubectl -n "$namespace" get ingress -l "app.kubernetes.io/instance=${release}" --no-headers 2>/dev/null | wc -l | tr -d ' ' || echo "0")
         if [ "$remaining" != "0" ]; then
+            force_clear_stuck_ingress_finalizers "$release" "$namespace"
             sleep 5
             continue
         fi
@@ -705,6 +840,9 @@ cleanup_persistent_state() {
         local pvc_count="0"
 
         remaining=$(kubectl -n "$namespace" get ingress -l "app.kubernetes.io/instance=${release}" --no-headers 2>/dev/null | wc -l | tr -d ' ' || echo "0")
+        if [ "$remaining" != "0" ]; then
+            force_clear_stuck_ingress_finalizers "$release" "$namespace"
+        fi
         pvc_count=$(kubectl -n "$namespace" get pvc -l "app.kubernetes.io/instance=${release}" --no-headers 2>/dev/null | wc -l | tr -d ' ' || echo "0")
         if [ "$remaining" = "0" ] && [ "$pvc_count" = "0" ] \
           && ! kubectl -n "$namespace" get pvc "${release}-influxdb" grafana >/dev/null 2>&1; then

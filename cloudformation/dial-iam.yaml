@@ -2,6 +2,9 @@ AWSTemplateFormatVersion: '2010-09-09'
 Description: 'DIAL IAM Roles for Service Accounts (IRSA)'
 
 Parameters:
+  DeploymentName:
+    Type: String
+    Description: Base deployment name used as a prefix for stable IAM role names (must keep resulting RoleName <= 64 chars)
   OIDCProviderArn:
     Type: String
   OIDCProviderUrl:
@@ -35,6 +38,44 @@ Resources:
               - Effect: Allow
                 Action: ['elasticache:Connect']
                 Resource: [!Ref RedisCacheArn, !Ref RedisUserArn]
+        - PolicyName: LicenseManagerReadAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'license-manager:ListDistributedGrants'
+                  - 'license-manager:ListLicenseAssetRulesets'
+                  - 'license-manager:ListLicenseConfigurations'
+                  - 'license-manager:ListLicenseConfigurationsForOrganization'
+                  - 'license-manager:ListReceivedLicenses'
+                  - 'license-manager:GetServiceSettings'
+                  - 'license-manager:ListAssetsForLicenseAssetGroup'
+                  - 'license-manager:GetLicenseAssetRuleset'
+                  - 'license-manager:ListUsageForLicenseConfiguration'
+                  - 'license-manager:ListLicenseSpecificationsForResource'
+                  - 'license-manager:GetLicenseManagerReportGenerator'
+                  - 'license-manager:ListTagsForResource'
+                  - 'license-manager:ListAssociationsForLicenseConfiguration'
+                  - 'license-manager:GetLicenseConfiguration'
+                  - 'license-manager:ListReceivedGrants'
+                  - 'license-manager:GetLicenseConversionTask'
+                  - 'license-manager:GetLicenseAssetGroup'
+                  - 'license-manager:ListReceivedLicensesForOrganization'
+                  - 'license-manager:ListResourceInventory'
+                  - 'license-manager:ListLicenseConversionTasks'
+                  - 'license-manager:ListLicenseAssetGroups'
+                  - 'license-manager:ListTokens'
+                  - 'license-manager:GetAccessToken'
+                  - 'license-manager:ListLicenses'
+                  - 'license-manager:ListLicenseManagerReportGenerators'
+                  - 'license-manager:GetLicenseUsage'
+                  - 'license-manager:GetLicense'
+                  - 'license-manager:ListFailuresForLicenseConfigurationOperations'
+                  - 'license-manager:ListLicenseVersions'
+                  - 'license-manager:GetGrant'
+                  - 'license-manager:ListReceivedGrantsForOrganization'
+                Resource: '*'
 
   BedrockServiceRole:
     Type: AWS::IAM::Role
@@ -49,6 +90,20 @@ Resources:
             Action: 'sts:AssumeRoleWithWebIdentity'
       ManagedPolicyArns:
         - 'arn:aws:iam::aws:policy/AmazonBedrockFullAccess'
+
+  AppControllerServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${DeploymentName}-app-controller-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Ref OIDCProviderArn
+            Action: 'sts:AssumeRoleWithWebIdentity'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryFullAccess'
 
   ALBControllerPolicy:
     Type: AWS::IAM::ManagedPolicy
@@ -253,5 +308,7 @@ Outputs:
     Value: !GetAtt CoreServiceRole.Arn
   BedrockRoleArn:
     Value: !GetAtt BedrockServiceRole.Arn
+  AppControllerRoleArn:
+    Value: !GetAtt AppControllerServiceRole.Arn
   ALBControllerRoleArn:
     Value: !GetAtt ALBControllerRole.Arn

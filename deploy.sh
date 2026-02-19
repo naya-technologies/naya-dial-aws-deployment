@@ -135,8 +135,12 @@ echo "Stack Name:      ${STACK_NAME}"
 echo "Region:          ${AWS_REGION}"
 echo "Domain:          ${DOMAIN_NAME}"
 echo "EKS Cluster:     ${EKS_CLUSTER_NAME}"
-echo "EKS Auto Mode:   enabled"
-echo "NodePools:       ${EKS_AUTO_NODE_POOLS:-system,general-purpose}"
+echo "Kubernetes:      ${KUBERNETES_VERSION:-1.35}"
+echo "EKS NodeGroups:"
+echo "  core:          ${CORE_NODE_INSTANCE_TYPE:-c6i.xlarge} (desired=${CORE_NODE_DESIRED_SIZE:-1} min=${CORE_NODE_MIN_SIZE:-1} max=${CORE_NODE_MAX_SIZE:-1})"
+echo "  rag:           ${RAG_NODE_INSTANCE_TYPE:-c6i.xlarge} (desired=${RAG_NODE_DESIRED_SIZE:-1} min=${RAG_NODE_MIN_SIZE:-1} max=${RAG_NODE_MAX_SIZE:-1})"
+echo "  dynamic:       ${DYNAMIC_NODE_INSTANCE_TYPE:-c6i.large} (desired=${DYNAMIC_NODE_DESIRED_SIZE:-2} min=${DYNAMIC_NODE_MIN_SIZE:-2} max=${DYNAMIC_NODE_MAX_SIZE:-2})"
+echo "  system:        ${SYSTEM_NODE_INSTANCE_TYPE:-c6i.large} (desired=${SYSTEM_NODE_DESIRED_SIZE:-1} min=${SYSTEM_NODE_MIN_SIZE:-1} max=${SYSTEM_NODE_MAX_SIZE:-1})"
 echo "Self-Register:   ${ALLOW_SELF_REGISTRATION}"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
@@ -149,6 +153,7 @@ echo ""
 
 PARAMS="ParameterKey=DomainName,ParameterValue=${DOMAIN_NAME}"
 PARAMS="${PARAMS} ParameterKey=EKSClusterName,ParameterValue=${EKS_CLUSTER_NAME}"
+PARAMS="${PARAMS} ParameterKey=KubernetesVersion,ParameterValue=${KUBERNETES_VERSION:-1.35}"
 PARAMS="${PARAMS} ParameterKey=DBMasterPassword,ParameterValue=${DB_PASSWORD}"
 PARAMS="${PARAMS} ParameterKey=CognitoUserPoolName,ParameterValue=${COGNITO_USER_POOL_NAME}"
 PARAMS="${PARAMS} ParameterKey=CognitoAdminUserPoolName,ParameterValue=${COGNITO_ADMIN_USER_POOL_NAME:-dial-admins}"
@@ -158,8 +163,22 @@ PARAMS="${PARAMS} ParameterKey=PublicSubnet1Cidr,ParameterValue=${PUBLIC_SUBNET_
 PARAMS="${PARAMS} ParameterKey=PublicSubnet2Cidr,ParameterValue=${PUBLIC_SUBNET_2_CIDR:-10.0.2.0/24}"
 PARAMS="${PARAMS} ParameterKey=PrivateSubnet1Cidr,ParameterValue=${PRIVATE_SUBNET_1_CIDR:-10.0.10.0/24}"
 PARAMS="${PARAMS} ParameterKey=PrivateSubnet2Cidr,ParameterValue=${PRIVATE_SUBNET_2_CIDR:-10.0.11.0/24}"
-# Quote the value so AWS CLI shorthand parser doesn't treat the comma as a list.
-PARAMS="${PARAMS} ParameterKey=EKSAutoNodePools,ParameterValue=\"${EKS_AUTO_NODE_POOLS:-system,general-purpose}\""
+PARAMS="${PARAMS} ParameterKey=CoreNodeInstanceType,ParameterValue=${CORE_NODE_INSTANCE_TYPE:-c6i.xlarge}"
+PARAMS="${PARAMS} ParameterKey=CoreNodeMinSize,ParameterValue=${CORE_NODE_MIN_SIZE:-1}"
+PARAMS="${PARAMS} ParameterKey=CoreNodeMaxSize,ParameterValue=${CORE_NODE_MAX_SIZE:-1}"
+PARAMS="${PARAMS} ParameterKey=CoreNodeDesiredSize,ParameterValue=${CORE_NODE_DESIRED_SIZE:-1}"
+PARAMS="${PARAMS} ParameterKey=RagNodeInstanceType,ParameterValue=${RAG_NODE_INSTANCE_TYPE:-c6i.xlarge}"
+PARAMS="${PARAMS} ParameterKey=RagNodeMinSize,ParameterValue=${RAG_NODE_MIN_SIZE:-1}"
+PARAMS="${PARAMS} ParameterKey=RagNodeMaxSize,ParameterValue=${RAG_NODE_MAX_SIZE:-1}"
+PARAMS="${PARAMS} ParameterKey=RagNodeDesiredSize,ParameterValue=${RAG_NODE_DESIRED_SIZE:-1}"
+PARAMS="${PARAMS} ParameterKey=DynamicNodeInstanceType,ParameterValue=${DYNAMIC_NODE_INSTANCE_TYPE:-c6i.large}"
+PARAMS="${PARAMS} ParameterKey=DynamicNodeMinSize,ParameterValue=${DYNAMIC_NODE_MIN_SIZE:-2}"
+PARAMS="${PARAMS} ParameterKey=DynamicNodeMaxSize,ParameterValue=${DYNAMIC_NODE_MAX_SIZE:-2}"
+PARAMS="${PARAMS} ParameterKey=DynamicNodeDesiredSize,ParameterValue=${DYNAMIC_NODE_DESIRED_SIZE:-2}"
+PARAMS="${PARAMS} ParameterKey=SystemNodeInstanceType,ParameterValue=${SYSTEM_NODE_INSTANCE_TYPE:-c6i.large}"
+PARAMS="${PARAMS} ParameterKey=SystemNodeMinSize,ParameterValue=${SYSTEM_NODE_MIN_SIZE:-1}"
+PARAMS="${PARAMS} ParameterKey=SystemNodeMaxSize,ParameterValue=${SYSTEM_NODE_MAX_SIZE:-1}"
+PARAMS="${PARAMS} ParameterKey=SystemNodeDesiredSize,ParameterValue=${SYSTEM_NODE_DESIRED_SIZE:-1}"
 
 # Check if stack exists
 if aws cloudformation describe-stacks --stack-name ${STACK_NAME} --region ${AWS_REGION} &> /dev/null; then
@@ -179,7 +198,7 @@ if aws cloudformation describe-stacks --stack-name ${STACK_NAME} --region ${AWS_
             --stack-name ${STACK_NAME} \
             --template-body file:///tmp/dial-main-updated.yaml \
             --parameters ${PARAMS} \
-            --capabilities CAPABILITY_NAMED_IAM \
+            --capabilities CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND \
             --region ${AWS_REGION}
         
         print_success "Stack creation initiated"
@@ -197,7 +216,7 @@ else
         --stack-name ${STACK_NAME} \
         --template-body file:///tmp/dial-main-updated.yaml \
         --parameters ${PARAMS} \
-        --capabilities CAPABILITY_NAMED_IAM \
+        --capabilities CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND \
         --region ${AWS_REGION}
     
     print_success "Stack creation initiated"

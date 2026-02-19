@@ -7,7 +7,7 @@ Parameters:
   
   KubernetesVersion:
     Type: String
-    Default: '1.33'
+    Default: '1.35'
   
   VPCId:
     Type: String
@@ -24,11 +24,75 @@ Parameters:
   PrivateRouteTableId:
     Type: String
     Description: Private route table ID for S3 Gateway endpoint
-  
-  AutoNodePools:
-    Type: CommaDelimitedList
-    Default: "system,general-purpose"
-    Description: Built-in EKS Auto Mode NodePools to enable (system,general-purpose)
+
+  # Managed node groups (3 groups: core / rag / dynamic)
+  CoreNodeInstanceType:
+    Type: String
+    Default: 'c6i.xlarge'
+    Description: 'EC2 instance type for core node group (recommended: 4 vCPU / 8 GiB)'
+
+  CoreNodeMinSize:
+    Type: Number
+    Default: 1
+
+  CoreNodeMaxSize:
+    Type: Number
+    Default: 1
+
+  CoreNodeDesiredSize:
+    Type: Number
+    Default: 1
+
+  RagNodeInstanceType:
+    Type: String
+    Default: 'c6i.xlarge'
+    Description: 'EC2 instance type for RAG node group (recommended: 4 vCPU / 8 GiB)'
+
+  RagNodeMinSize:
+    Type: Number
+    Default: 1
+
+  RagNodeMaxSize:
+    Type: Number
+    Default: 1
+
+  RagNodeDesiredSize:
+    Type: Number
+    Default: 1
+
+  DynamicNodeInstanceType:
+    Type: String
+    Default: 'c6i.large'
+    Description: 'EC2 instance type for dynamic workers node group (recommended: 2 vCPU / 4 GiB)'
+
+  DynamicNodeMinSize:
+    Type: Number
+    Default: 2
+
+  DynamicNodeMaxSize:
+    Type: Number
+    Default: 2
+
+  DynamicNodeDesiredSize:
+    Type: Number
+    Default: 2
+
+  SystemNodeInstanceType:
+    Type: String
+    Default: 'c6i.large'
+    Description: 'EC2 instance type for system node group (recommended: 2 vCPU / 4 GiB)'
+
+  SystemNodeMinSize:
+    Type: Number
+    Default: 1
+
+  SystemNodeMaxSize:
+    Type: Number
+    Default: 1
+
+  SystemNodeDesiredSize:
+    Type: Number
+    Default: 1
 
 Resources:
   # VPC Endpoints Security Group
@@ -184,8 +248,11 @@ Resources:
               Service: ec2.amazonaws.com
             Action: 'sts:AssumeRole'
       ManagedPolicyArns:
-        - 'arn:aws:iam::aws:policy/AmazonEKSWorkerNodeMinimalPolicy'
-        - 'arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPullOnly'
+        - 'arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy'
+        - 'arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy'
+        - 'arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly'
+        # AWS-managed policy for the EBS CSI driver uses the service-role path.
+        - 'arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy'
       Tags:
         - Key: Name
           Value: !Sub '${ClusterName}-node-role'
@@ -213,14 +280,6 @@ Resources:
         IpFamily: ipv4
         ElasticLoadBalancing:
           Enabled: true
-      # Enable EKS Auto Mode compute + block storage capabilities (no managed node groups).
-      ComputeConfig:
-        Enabled: true
-        NodePools: !Ref AutoNodePools
-        NodeRoleArn: !GetAtt EKSNodeRole.Arn
-      StorageConfig:
-        BlockStorage:
-          Enabled: true
       ResourcesVpcConfig:
         SubnetIds:
           - !Ref PrivateSubnet1Id
@@ -239,6 +298,99 @@ Resources:
         - Key: Name
           Value: !Ref ClusterName
 
+  # Managed node groups
+  CoreNodeGroup:
+    Type: AWS::EKS::Nodegroup
+    DependsOn: EKSCluster
+    Properties:
+      ClusterName: !Ref ClusterName
+      NodegroupName: !Sub '${ClusterName}-core'
+      NodeRole: !GetAtt EKSNodeRole.Arn
+      Subnets:
+        - !Ref PrivateSubnet1Id
+        - !Ref PrivateSubnet2Id
+      CapacityType: ON_DEMAND
+      InstanceTypes:
+        - !Ref CoreNodeInstanceType
+      ScalingConfig:
+        MinSize: !Ref CoreNodeMinSize
+        MaxSize: !Ref CoreNodeMaxSize
+        DesiredSize: !Ref CoreNodeDesiredSize
+      Labels:
+        workload: core
+
+  RagNodeGroup:
+    Type: AWS::EKS::Nodegroup
+    DependsOn: EKSCluster
+    Properties:
+      ClusterName: !Ref ClusterName
+      NodegroupName: !Sub '${ClusterName}-rag'
+      NodeRole: !GetAtt EKSNodeRole.Arn
+      Subnets:
+        - !Ref PrivateSubnet1Id
+        - !Ref PrivateSubnet2Id
+      CapacityType: ON_DEMAND
+      InstanceTypes:
+        - !Ref RagNodeInstanceType
+      ScalingConfig:
+        MinSize: !Ref RagNodeMinSize
+        MaxSize: !Ref RagNodeMaxSize
+        DesiredSize: !Ref RagNodeDesiredSize
+      Labels:
+        workload: rag
+      Taints:
+        - Key: dedicated
+          Value: rag
+          Effect: NO_SCHEDULE
+
+  DynamicNodeGroup:
+    Type: AWS::EKS::Nodegroup
+    DependsOn: EKSCluster
+    Properties:
+      ClusterName: !Ref ClusterName
+      NodegroupName: !Sub '${ClusterName}-dynamic'
+      NodeRole: !GetAtt EKSNodeRole.Arn
+      Subnets:
+        - !Ref PrivateSubnet1Id
+        - !Ref PrivateSubnet2Id
+      CapacityType: ON_DEMAND
+      InstanceTypes:
+        - !Ref DynamicNodeInstanceType
+      ScalingConfig:
+        MinSize: !Ref DynamicNodeMinSize
+        MaxSize: !Ref DynamicNodeMaxSize
+        DesiredSize: !Ref DynamicNodeDesiredSize
+      Labels:
+        workload: dynamic
+      Taints:
+        - Key: dedicated
+          Value: dynamic
+          Effect: NO_SCHEDULE
+
+  SystemNodeGroup:
+    Type: AWS::EKS::Nodegroup
+    DependsOn: EKSCluster
+    Properties:
+      ClusterName: !Ref ClusterName
+      NodegroupName: !Sub '${ClusterName}-system'
+      NodeRole: !GetAtt EKSNodeRole.Arn
+      Subnets:
+        - !Ref PrivateSubnet1Id
+        - !Ref PrivateSubnet2Id
+      CapacityType: ON_DEMAND
+      InstanceTypes:
+        - !Ref SystemNodeInstanceType
+      ScalingConfig:
+        MinSize: !Ref SystemNodeMinSize
+        MaxSize: !Ref SystemNodeMaxSize
+        DesiredSize: !Ref SystemNodeDesiredSize
+      Labels:
+        workload: system
+      Taints:
+        - Key: dedicated
+          Value: system
+          Effect: NO_SCHEDULE
+
   # OIDC Provider
   OIDCProvider:
     Type: AWS::IAM::OIDCProvider
@@ -253,25 +405,86 @@ Resources:
         - Key: Name
           Value: !Sub '${ClusterName}-oidc-provider'
 
+  # IAM role for aws-ebs-csi-driver controller (IRSA).
+  # Nodes are configured with IMDS hop limit=1 (pods can't reach IMDS), so the controller
+  # must use IRSA (ServiceAccountRoleArn on the EKS addon) to call AWS APIs.
+  EBSCSIDriverRole:
+    Type: AWS::IAM::Role
+    DependsOn: OIDCProvider
+    Properties:
+      RoleName: !Sub '${ClusterName}-ebs-csi-driver-role'
+      # IAM API expects this as a JSON string. Supplying a string here avoids
+      # CloudFormation limitations around using intrinsic functions as map keys.
+      AssumeRolePolicyDocument: !Sub
+        - |
+          {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Principal": { "Federated": "${OIDCProviderArn}" },
+                "Action": "sts:AssumeRoleWithWebIdentity",
+                "Condition": {
+                  "StringEquals": {
+                    "${OIDCIssuer}:aud": "sts.amazonaws.com",
+                    "${OIDCIssuer}:sub": "system:serviceaccount:kube-system:ebs-csi-controller-sa"
+                  }
+                }
+              }
+            ]
+          }
+        - OIDCProviderArn: !GetAtt OIDCProvider.Arn
+          OIDCIssuer: !Select [1, !Split ['https://', !GetAtt EKSCluster.OpenIdConnectIssuerUrl]]
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ClusterName}-ebs-csi-driver-role'
+
   # Optional: match dial-poc baseline addons (managed by EKS)
   PodIdentityAgentAddon:
     Type: AWS::EKS::Addon
-    DependsOn: EKSCluster
+    DependsOn: SystemNodeGroup
     Properties:
       ClusterName: !Ref ClusterName
       AddonName: eks-pod-identity-agent
       ResolveConflicts: OVERWRITE
 
+  EBSCSIDriverAddon:
+    Type: AWS::EKS::Addon
+    DependsOn:
+      - SystemNodeGroup
+      - EBSCSIDriverRole
+    Properties:
+      ClusterName: !Ref ClusterName
+      AddonName: aws-ebs-csi-driver
+      ResolveConflicts: OVERWRITE
+      ServiceAccountRoleArn: !GetAtt EBSCSIDriverRole.Arn
+      ConfigurationValues: |
+        controller:
+          nodeSelector:
+            workload: system
+          tolerations:
+            - key: dedicated
+              operator: Equal
+              value: system
+              effect: NoSchedule
+  
   MetricsServerAddon:
     Type: AWS::EKS::Addon
-    DependsOn: EKSCluster
+    DependsOn: SystemNodeGroup
     Properties:
       ClusterName: !Ref ClusterName
       AddonName: metrics-server
       ResolveConflicts: OVERWRITE
       ConfigurationValues: |
         nodeSelector:
-          karpenter.sh/nodepool: system
+          workload: system
+        tolerations:
+          - key: dedicated
+            operator: Equal
+            value: system
+            effect: NoSchedule
 
 Outputs:
   ClusterName:

@@ -15,13 +15,89 @@ Parameters:
   
   KubernetesVersion:
     Type: String
-    Default: '1.33'
+    Default: '1.35'
     Description: Kubernetes version
-  
-  EKSAutoNodePools:
-    Type: CommaDelimitedList
-    Default: "system,general-purpose"
-    Description: Built-in EKS Auto Mode NodePools to enable (system,general-purpose)
+
+  # EKS Managed Node Groups
+  CoreNodeInstanceType:
+    Type: String
+    Default: 'c6i.xlarge'
+    Description: 'EC2 instance type for core node group (recommended: 4 vCPU / 8 GiB)'
+
+  CoreNodeMinSize:
+    Type: Number
+    Default: 1
+    Description: Minimum size of core node group
+
+  CoreNodeMaxSize:
+    Type: Number
+    Default: 1
+    Description: Maximum size of core node group
+
+  CoreNodeDesiredSize:
+    Type: Number
+    Default: 1
+    Description: Desired size of core node group
+
+  RagNodeInstanceType:
+    Type: String
+    Default: 'c6i.xlarge'
+    Description: 'EC2 instance type for RAG (static workers) node group (recommended: 4 vCPU / 8 GiB)'
+
+  RagNodeMinSize:
+    Type: Number
+    Default: 1
+    Description: Minimum size of RAG node group
+
+  RagNodeMaxSize:
+    Type: Number
+    Default: 1
+    Description: Maximum size of RAG node group
+
+  RagNodeDesiredSize:
+    Type: Number
+    Default: 1
+    Description: Desired size of RAG node group
+
+  DynamicNodeInstanceType:
+    Type: String
+    Default: 'c6i.large'
+    Description: 'EC2 instance type for dynamic workers node group (recommended: 2 vCPU / 4 GiB)'
+
+  DynamicNodeMinSize:
+    Type: Number
+    Default: 2
+    Description: Minimum size of dynamic workers node group
+
+  DynamicNodeMaxSize:
+    Type: Number
+    Default: 2
+    Description: Maximum size of dynamic workers node group
+
+  DynamicNodeDesiredSize:
+    Type: Number
+    Default: 2
+    Description: Desired size of dynamic workers node group
+
+  SystemNodeInstanceType:
+    Type: String
+    Default: 'c6i.large'
+    Description: 'EC2 instance type for system node group (recommended: 2 vCPU / 4 GiB)'
+
+  SystemNodeMinSize:
+    Type: Number
+    Default: 1
+    Description: Minimum size of system node group
+
+  SystemNodeMaxSize:
+    Type: Number
+    Default: 1
+    Description: Maximum size of system node group
+
+  SystemNodeDesiredSize:
+    Type: Number
+    Default: 1
+    Description: Desired size of system node group
   
   # Database Configuration
   DBMasterUsername:
@@ -106,11 +182,25 @@ Resources:
         PrivateSubnet2Id: !GetAtt VPCStack.Outputs.PrivateSubnet2Id
         EKSSecurityGroupId: !GetAtt VPCStack.Outputs.EKSSecurityGroupId
         PrivateRouteTableId: !GetAtt VPCStack.Outputs.PrivateRouteTableId
-        # Nested stack Parameters values must be strings; join list into comma-separated string.
-        AutoNodePools: !Join [",", !Ref EKSAutoNodePools]
+        CoreNodeInstanceType: !Ref CoreNodeInstanceType
+        CoreNodeMinSize: !Ref CoreNodeMinSize
+        CoreNodeMaxSize: !Ref CoreNodeMaxSize
+        CoreNodeDesiredSize: !Ref CoreNodeDesiredSize
+        RagNodeInstanceType: !Ref RagNodeInstanceType
+        RagNodeMinSize: !Ref RagNodeMinSize
+        RagNodeMaxSize: !Ref RagNodeMaxSize
+        RagNodeDesiredSize: !Ref RagNodeDesiredSize
+        DynamicNodeInstanceType: !Ref DynamicNodeInstanceType
+        DynamicNodeMinSize: !Ref DynamicNodeMinSize
+        DynamicNodeMaxSize: !Ref DynamicNodeMaxSize
+        DynamicNodeDesiredSize: !Ref DynamicNodeDesiredSize
+        SystemNodeInstanceType: !Ref SystemNodeInstanceType
+        SystemNodeMinSize: !Ref SystemNodeMinSize
+        SystemNodeMaxSize: !Ref SystemNodeMaxSize
+        SystemNodeDesiredSize: !Ref SystemNodeDesiredSize
 
-  # EKS Auto Mode creates its own ClusterSecurityGroupId (used by nodes). Our VPCStack security groups
-  # are intentionally locked down, so we must explicitly allow ALB <-> node traffic against the actual
+  # EKS creates a ClusterSecurityGroupId used by worker nodes. Our VPCStack security groups are
+  # intentionally locked down, so we must explicitly allow ALB <-> node traffic against the actual
   # cluster SG to avoid 504/Target.Timeout on ALB target groups.
   EKSClusterSecurityGroupIngressFromALB:
     Type: AWS::EC2::SecurityGroupIngress
@@ -134,7 +224,7 @@ Resources:
       IpProtocol: -1
       DestinationSecurityGroupId: !GetAtt EKSStack.Outputs.ClusterSecurityGroupId
 
-  # Allow EKS Auto Mode nodes to reach Interface VPC endpoints (Bedrock/Secrets Manager/etc).
+  # Allow EKS nodes to reach Interface VPC endpoints (Bedrock/Secrets Manager/etc).
   # VPCStack creates the endpoint security group; permit from the actual EKS cluster SG.
   VPCEndpointSecurityGroupIngressFromEKSClusterSecurityGroup:
     Type: AWS::EC2::SecurityGroupIngress
@@ -155,6 +245,7 @@ Resources:
     Properties:
       TemplateURL: !Sub 'https://${TemplatesBucket}.s3.${AWS::Region}.amazonaws.com/dial-iam.yaml'
       Parameters:
+        DeploymentName: !Ref AWS::StackName
         OIDCProviderArn: !GetAtt EKSStack.Outputs.OIDCProviderArn
         OIDCProviderUrl: !GetAtt EKSStack.Outputs.OIDCProviderUrl
         S3BucketName: !GetAtt StorageStack.Outputs.S3BucketName
@@ -305,6 +396,10 @@ Outputs:
     Description: Bedrock Service Role ARN
     Value: !GetAtt IAMStack.Outputs.BedrockRoleArn
   
+  AppControllerRoleArn:
+    Description: App Controller Service Role ARN
+    Value: !GetAtt IAMStack.Outputs.AppControllerRoleArn
+
   ALBControllerRoleArn:
     Description: ALB Controller Role ARN
     Value: !GetAtt IAMStack.Outputs.ALBControllerRoleArn
