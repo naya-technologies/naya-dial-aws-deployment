@@ -934,6 +934,61 @@ if [ "$CHAT_ALB_DNS" = "pending..." ] || [ "$ADMIN_ALB_DNS" = "pending..." ] || 
     echo ""
 fi
 
+install_knative_with_istio() {
+    echo "Installing knative-serving"
+    kubectl apply -f https://github.com/knative/serving/releases/download/knative-v1.21.0/serving-crds.yaml
+    kubectl apply -f https://github.com/knative/serving/releases/download/knative-v1.21.0/serving-core.yaml
+
+    echo "Installing istioctl..."
+    curl -sL https://istio.io/downloadIstioctl | sh -
+    export PATH=$HOME/.istioctl/bin:$PATH
+
+    echo "Installing istio on cluster..."
+    istioctl install -y
+
+    echo "Putting istio pods on dynamic nodegroup"
+    for d in istiod istio-ingressgateway; do
+            kubectl -n istio-system patch deployment $d \
+            --type merge \
+            -p '{"spec":{"template":{"spec":{"nodeSelector":{"workload":"dynamic"},"tolerations":[{"key":"dedicated","operator":"Equal","value":"dynamic","effect":"NoSchedule"}]}}}}'
+    done
+
+    kubectl apply -f https://github.com/knative-extensions/net-istio/releases/download/knative-v1.21.0/net-istio.yaml
+    kubectl apply -f https://github.com/knative/serving/releases/download/knative-v1.21.0/serving-default-domain.yaml
+
+    echo "Putting knative pods on system nodegroup"
+    for d in controller webhook activator autoscaler net-istio-controller net-istio-webhook; do
+        kubectl -n knative-serving patch deployment $d \
+        --type merge \
+        -p '{"spec":{"template":{"spec":{"nodeSelector":{"workload":"system"},"tolerations":[{"key":"dedicated","operator":"Equal","value":"system","effect":"NoSchedule"}]}}}}'
+    done
+    echo "Patching knative config..."
+    kubectl patch configmap/config-autoscaler --namespace knative-serving --type merge --patch '{"data":{"allow-zero-initial-scale":"true"}}'
+    kubectl patch configmap/config-network --namespace knative-serving --type merge --patch '{"data":{"ingress-class":"istio.ingress.networking.knative.dev"}}'
+    kubectl -n knative-serving patch cm config-features --type merge -p '{
+     "data": {
+       "kubernetes.podspec-nodeselector": "enabled",
+       "kubernetes.podspec-tolerations": "enabled"
+     }
+    }'
+
+    kubectl -n knative-serving patch configmap config-deployment --type merge \
+      -p "{\"data\":{\"registries-skipping-tag-resolving\":\"$AWS_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com\"}}"
+
+    echo "Enabling istio sidecar injection on knative..."
+    kubectl label namespace knative-serving istio-injection=enabled
+
+    echo "Patching App-Controller Service Account role with needed permissions..."
+    kubectl apply -f app-controller-sa-role.yaml
+
+    echo "Restarting relevant pods to set new configs..."
+    kubectl rollout restart deployment autoscaler -n knative-serving
+    kubectl rollout restart deployment controller -n knative-serving
+    kubectl rollout restart deployment dial-app-controller -n dial
+}
+
+install_knative_with_istio
+
 echo "📝 Add these DNS records to your domain provider:"
 echo "=========================================="
 echo ""
