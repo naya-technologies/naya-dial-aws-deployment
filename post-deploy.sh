@@ -988,7 +988,8 @@ install_knative_with_istio() {
 }
 
 install_knative_with_istio
-redis6-cli --tls -h $REDIS_ENDPOINT -p 6379 SET 6c69634b6579 o1Yr6cVaAt9aJf1QrhV6fg==
+REDIS_HOSTNAME=$(echo "$REDIS_ENDPOINT" | awk -F'rediss://|:6379' '{print $2}')
+redis6-cli --tls -h "$REDIS_HOSTNAME" -p 6379 SET 6c69634b6579 o1Yr6cVaAt9aJf1QrhV6fg==
 
 echo "📝 Add these DNS records to your domain provider:"
 echo "=========================================="
