@@ -322,6 +322,7 @@ if ! printf '%s\n' "$CERT_SANS" | tr '\t' '\n' | grep -Fxq "$WILDCARD_DOMAIN"; t
     echo "   Use a certificate that includes *.${DOMAIN_NAME}"
     exit 1
 fi
+REDIS_HOSTNAME=$(echo "$REDIS_ENDPOINT" | awk -F'rediss://|:6379' '{print $2}')
 
 # Export all variables for Python
 export REGION VPC_ID EKS_CLUSTER_NAME ALB_CONTROLLER_ROLE_ARN CORE_ROLE_ARN
@@ -334,7 +335,7 @@ export BEDROCK_ROLE_ARN DB_ENDPOINT DB_PORT DB_NAME DB_USER DB_PASSWORD
 export COGNITO_ADMIN_HOST COGNITO_ADMIN_CLIENT_ID COGNITO_ADMIN_CLIENT_SECRET ADMIN_NEXTAUTH_SECRET
 export INFLUXDB_ORG INFLUXDB_BUCKET INFLUXDB_USER INFLUXDB_PASSWORD INFLUXDB_TOKEN
 export GRAFANA_PUBLIC_HOST GRAFANA_LINK GRAFANA_ADMIN_PASSWORD
-
+export REDIS_HOSTNAME
 # Create helm values using Python to avoid YAML issues
 python3 << 'PYEOF'
 import json
@@ -617,6 +618,11 @@ sinks:
             'hosts': [grafana_public_host],
         },
     },
+    'lic-ins': {
+        'env': {
+        'REDIS_HOST': os.environ['REDIS_HOST']
+        }
+    }
 }
 
 # Write YAML file
@@ -933,6 +939,31 @@ if [ "$CHAT_ALB_DNS" = "pending..." ] || [ "$ADMIN_ALB_DNS" = "pending..." ] || 
     echo "   kubectl get ingress -n ${DIAL_NAMESPACE}"
     echo ""
 fi
+check_lic_ins() {
+  for i in {1..5}; do
+      echo "Wait iteration $i: $(date +%T)"
+      pod_name=$(kubectl get pods --selector=app.kubernetes.io/instance=dial-lic-ins --sort-by=.metadata.creationTimestamp -n dial| grep dial-lic-ins | tail -n 1 | cut -d$' ' -f1)
+      if [[ $(grep -c . <<<"$pod_name") > 1 ]]; then
+      echo "Pod name is malformed, exiting..."
+      exit 1
+      fi
+      if [[ -z "$pod_name" ]]; then
+      echo "Pod name is empty, exiting..."
+      exit 1
+      fi
+      echo "pod name $pod_name"
+      last_output=$(kubectl logs -n dial $pod_name | grep "Setting up..." -A 1 | tail -n 1)
+      if [[ "$last_output" == "OK" ]]; then
+      echo "EXIT CONDITION MET"
+      kubectl delete deployment dial-lic-ins-dial-extension -n dial
+      break
+      elif [[ -n "$last_output" ]]; then
+      echo "EXIT CONDITION NOT MET! Last output: $last_output"
+      exit 1
+      fi
+      sleep 2
+  done
+}
 
 install_knative_with_istio() {
     echo "Installing knative-serving"
@@ -973,7 +1004,7 @@ install_knative_with_istio() {
     }'
 
     kubectl -n knative-serving patch configmap config-deployment --type merge \
-      -p "{\"data\":{\"registries-skipping-tag-resolving\":\"$AWS_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com\"}}"
+      -p "{\"data\":{\"registries-skipping-tag-resolving\":\"$AWS_ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com\"}}"
 
     echo "Enabling istio sidecar injection on knative..."
     kubectl label namespace knative-serving istio-injection=enabled
@@ -987,9 +1018,8 @@ install_knative_with_istio() {
     kubectl rollout restart deployment dial-app-controller -n dial
 }
 
+check_lic_ins
 install_knative_with_istio
-REDIS_HOSTNAME=$(echo "$REDIS_ENDPOINT" | awk -F'rediss://|:6379' '{print $2}')
-redis6-cli --tls -h "$REDIS_HOSTNAME" -p 6379 SET 6c69634b6579 o1Yr6cVaAt9aJf1QrhV6fg==
 
 echo "📝 Add these DNS records to your domain provider:"
 echo "=========================================="
