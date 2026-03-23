@@ -620,7 +620,7 @@ sinks:
     },
     'lic-ins': {
         'env': {
-        'REDIS_HOST': os.environ['REDIS_HOST']
+        'REDIS_HOST': os.environ['REDIS_HOSTNAME']
         }
     }
 }
