@@ -120,37 +120,75 @@ empty_bucket() {
         return 0
     fi
 
-    # Delete current objects
-    aws s3 rm "s3://${BUCKET_NAME}" --recursive --region ${AWS_REGION} 2>/dev/null || true
-
-    # Delete object versions
-    local VERSIONS_JSON
-    VERSIONS_JSON=$(aws s3api list-object-versions \
+    local VERSIONING_STATUS
+    VERSIONING_STATUS=$(aws s3api get-bucket-versioning \
         --bucket "${BUCKET_NAME}" \
         --region ${AWS_REGION} \
-        --query 'Versions[].{Key:Key,VersionId:VersionId}' \
-        --output json 2>/dev/null || echo "[]")
+        --query 'Status' \
+        --output text 2>/dev/null || echo "")
 
-    if [ "$VERSIONS_JSON" != "[]" ]; then
-        aws s3api delete-objects \
-            --bucket "${BUCKET_NAME}" \
-            --region ${AWS_REGION} \
-            --delete "{\"Objects\": ${VERSIONS_JSON}}" 2>/dev/null || true
+    if [ "$VERSIONING_STATUS" != "Enabled" ] && [ "$VERSIONING_STATUS" != "Suspended" ]; then
+        aws s3 rm "s3://${BUCKET_NAME}" --recursive --region ${AWS_REGION} 2>/dev/null || true
+        return 0
     fi
 
-    # Delete delete-markers
-    local MARKERS_JSON
-    MARKERS_JSON=$(aws s3api list-object-versions \
-        --bucket "${BUCKET_NAME}" \
-        --region ${AWS_REGION} \
-        --query 'DeleteMarkers[].{Key:Key,VersionId:VersionId}' \
-        --output json 2>/dev/null || echo "[]")
+    local DELETE_BATCH
+    local DELETE_COUNT
+    local ITERATION=0
 
-    if [ "$MARKERS_JSON" != "[]" ]; then
+    while true; do
+        DELETE_BATCH=$(aws s3api list-object-versions \
+            --bucket "${BUCKET_NAME}" \
+            --region ${AWS_REGION} \
+            --output json 2>/dev/null | jq -c '{Objects: [((.Versions // []) + (.DeleteMarkers // []))[] | {Key: .Key, VersionId: .VersionId}], Quiet: true}' 2>/dev/null || echo '{"Objects":[],"Quiet":true}')
+        DELETE_COUNT=$(printf '%s' "${DELETE_BATCH}" | jq '.Objects | length' 2>/dev/null || echo "0")
+
+        if [ "${DELETE_COUNT}" = "0" ]; then
+            break
+        fi
+
+        ITERATION=$((ITERATION + 1))
+        print_info "  Removing ${DELETE_COUNT} object version(s)/delete marker(s) from ${BUCKET_NAME} (batch ${ITERATION})"
         aws s3api delete-objects \
             --bucket "${BUCKET_NAME}" \
             --region ${AWS_REGION} \
-            --delete "{\"Objects\": ${MARKERS_JSON}}" 2>/dev/null || true
+            --delete "${DELETE_BATCH}" 2>/dev/null || true
+    done
+}
+
+resolve_storage_bucket_name() {
+    local RESOLVED_BUCKET=""
+
+    if aws cloudformation describe-stacks --stack-name ${STACK_NAME} --region ${AWS_REGION} &> /dev/null; then
+        RESOLVED_BUCKET=$(aws cloudformation describe-stacks \
+            --stack-name ${STACK_NAME} \
+            --region ${AWS_REGION} \
+            --query "Stacks[0].Outputs[?OutputKey=='S3BucketName'].OutputValue" \
+            --output text 2>/dev/null || echo "")
+    fi
+
+    if [ -n "$RESOLVED_BUCKET" ] && [ "$RESOLVED_BUCKET" != "None" ]; then
+        printf '%s\n' "$RESOLVED_BUCKET"
+        return 0
+    fi
+
+    local STORAGE_STACK_ARN
+    STORAGE_STACK_ARN=$(aws cloudformation describe-stack-resources \
+        --stack-name ${STACK_NAME} \
+        --region ${AWS_REGION} \
+        --query "StackResources[?LogicalResourceId=='StorageStack' && ResourceType=='AWS::CloudFormation::Stack'].PhysicalResourceId" \
+        --output text 2>/dev/null || echo "")
+
+    if [ -n "$STORAGE_STACK_ARN" ] && [ "$STORAGE_STACK_ARN" != "None" ]; then
+        RESOLVED_BUCKET=$(aws cloudformation describe-stack-resources \
+            --stack-name ${STORAGE_STACK_ARN} \
+            --region ${AWS_REGION} \
+            --query "StackResources[?LogicalResourceId=='DIALBucket' && ResourceType=='AWS::S3::Bucket'].PhysicalResourceId" \
+            --output text 2>/dev/null || echo "")
+    fi
+
+    if [ -n "$RESOLVED_BUCKET" ] && [ "$RESOLVED_BUCKET" != "None" ]; then
+        printf '%s\n' "$RESOLVED_BUCKET"
     fi
 }
 
@@ -441,11 +479,7 @@ run_helm_precleanup "${DIAL_RELEASE_NAME}" "${DIAL_NAMESPACE}"
 print_header "Step 0: Emptying DIAL storage bucket (if any)"
 
 if aws cloudformation describe-stacks --stack-name ${STACK_NAME} --region ${AWS_REGION} &> /dev/null; then
-    STORAGE_BUCKET_NAME=$(aws cloudformation describe-stacks \
-        --stack-name ${STACK_NAME} \
-        --region ${AWS_REGION} \
-        --query "Stacks[0].Outputs[?OutputKey=='S3BucketName'].OutputValue" \
-        --output text 2>/dev/null || echo "")
+    STORAGE_BUCKET_NAME=$(resolve_storage_bucket_name)
 
     if [ -n "$STORAGE_BUCKET_NAME" ] && [ "$STORAGE_BUCKET_NAME" != "None" ]; then
         print_info "Emptying storage bucket: ${STORAGE_BUCKET_NAME}"
@@ -674,6 +708,12 @@ if aws cloudformation describe-stacks --stack-name ${STACK_NAME} --region ${AWS_
 
         if [ "$STACK_STATUS" = "DELETE_FAILED" ]; then
             print_warning "Stack deletion failed. Attempting to clean up common VPC blockers and retry..."
+
+            STORAGE_BUCKET_NAME=$(resolve_storage_bucket_name)
+            if [ -n "$STORAGE_BUCKET_NAME" ] && [ "$STORAGE_BUCKET_NAME" != "None" ]; then
+                print_info "Re-emptying storage bucket after failed stack deletion: ${STORAGE_BUCKET_NAME}"
+                empty_bucket "${STORAGE_BUCKET_NAME}"
+            fi
 
             # Ensure nested stacks that create private-subnet ENIs are fully deleted first.
             # Otherwise VPCStack can fail deleting subnets with "network interface in use".
