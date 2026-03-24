@@ -620,8 +620,8 @@ sinks:
     },
     'lic-ins': {
         'env': {
-        'REDIS_HOST': os.environ['REDIS_HOSTNAME']
-        }
+            'REDIS_HOST': os.environ['REDIS_HOSTNAME']
+        },
     }
 }
 
@@ -940,9 +940,12 @@ if [ "$CHAT_ALB_DNS" = "pending..." ] || [ "$ADMIN_ALB_DNS" = "pending..." ] || 
     echo ""
 fi
 check_lic_ins() {
+  local lic_ins_namespace="$DIAL_NAMESPACE"
+  local lic_ins_prefix="${DIAL_RELEASE_NAME}-lic-ins"
+  local lic_ins_deployment="${DIAL_RELEASE_NAME}-lic-ins"
   for i in {1..5}; do
       echo "Wait iteration $i: $(date +%T)"
-      pod_name=$(kubectl get pods --selector=app.kubernetes.io/instance=dial-lic-ins --sort-by=.metadata.creationTimestamp -n dial| grep dial-lic-ins | tail -n 1 | cut -d$' ' -f1)
+      pod_name=$(kubectl get pods --sort-by=.metadata.creationTimestamp -n "$lic_ins_namespace" -o name | grep "$lic_ins_prefix" | tail -n 1 | cut -d/ -f2)
       if [[ $(grep -c . <<<"$pod_name") > 1 ]]; then
       echo "Pod name is malformed, exiting..."
       exit 1
@@ -952,10 +955,10 @@ check_lic_ins() {
       exit 1
       fi
       echo "pod name $pod_name"
-      last_output=$(kubectl logs -n dial $pod_name | grep "Setting up..." -A 1 | tail -n 1)
+      last_output=$(kubectl logs -n "$lic_ins_namespace" "$pod_name" | grep "Setting up..." -A 1 | tail -n 1)
       if [[ "$last_output" == "OK" ]]; then
       echo "EXIT CONDITION MET"
-      kubectl delete deployment dial-lic-ins-dial-extension -n dial
+      kubectl delete deployment "$lic_ins_deployment" -n "$lic_ins_namespace"
       break
       elif [[ -n "$last_output" ]]; then
       echo "EXIT CONDITION NOT MET! Last output: $last_output"
@@ -1015,7 +1018,7 @@ install_knative_with_istio() {
     echo "Restarting relevant pods to set new configs..."
     kubectl rollout restart deployment autoscaler -n knative-serving
     kubectl rollout restart deployment controller -n knative-serving
-    kubectl rollout restart deployment dial-app-controller -n dial
+    kubectl rollout restart deployment "${DIAL_RELEASE_NAME}-app-controller" -n "$DIAL_NAMESPACE"
 }
 
 check_lic_ins
