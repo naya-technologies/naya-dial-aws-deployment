@@ -1,0 +1,34 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: dial-app-controller
+  namespace: dial
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "secrets"]
+    verbs: ["get", "list", "watch", "delete", "create"]
+  - apiGroups: [ "batch" ]
+    resources: [ "jobs" ]
+    verbs: [ "create", "get", "list", "watch", "delete" ]
+  - apiGroups: [ "serving.knative.dev" ]
+    resources: [ "services" ]
+    verbs: [ "create", "get", "list", "watch", "delete" ]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: dial-app-controller
+  namespace: dial
+subjects:
+  - kind: ServiceAccount
+    name: dial-app-controller
+    namespace: dial
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: dial-app-controller
+
+
+
+
+ 

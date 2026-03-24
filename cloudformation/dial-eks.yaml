@@ -67,15 +67,15 @@ Parameters:
 
   DynamicNodeMinSize:
     Type: Number
-    Default: 2
+    Default: 3
 
   DynamicNodeMaxSize:
     Type: Number
-    Default: 2
+    Default: 3
 
   DynamicNodeDesiredSize:
     Type: Number
-    Default: 2
+    Default: 3
 
   SystemNodeInstanceType:
     Type: String

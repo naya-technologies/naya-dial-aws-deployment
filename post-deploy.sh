@@ -322,6 +322,7 @@ if ! printf '%s\n' "$CERT_SANS" | tr '\t' '\n' | grep -Fxq "$WILDCARD_DOMAIN"; t
     echo "   Use a certificate that includes *.${DOMAIN_NAME}"
     exit 1
 fi
+REDIS_HOSTNAME=$(echo "$REDIS_ENDPOINT" | awk -F'rediss://|:6379' '{print $2}')
 
 # Export all variables for Python
 export REGION VPC_ID EKS_CLUSTER_NAME ALB_CONTROLLER_ROLE_ARN CORE_ROLE_ARN
@@ -334,7 +335,7 @@ export BEDROCK_ROLE_ARN DB_ENDPOINT DB_PORT DB_NAME DB_USER DB_PASSWORD
 export COGNITO_ADMIN_HOST COGNITO_ADMIN_CLIENT_ID COGNITO_ADMIN_CLIENT_SECRET ADMIN_NEXTAUTH_SECRET
 export INFLUXDB_ORG INFLUXDB_BUCKET INFLUXDB_USER INFLUXDB_PASSWORD INFLUXDB_TOKEN
 export GRAFANA_PUBLIC_HOST GRAFANA_LINK GRAFANA_ADMIN_PASSWORD
-
+export REDIS_HOSTNAME
 # Create helm values using Python to avoid YAML issues
 python3 << 'PYEOF'
 import json
@@ -617,6 +618,11 @@ sinks:
             'hosts': [grafana_public_host],
         },
     },
+    'lic-ins': {
+        'env': {
+            'REDIS_HOST': os.environ['REDIS_HOSTNAME']
+        },
+    }
 }
 
 # Write YAML file
@@ -933,6 +939,90 @@ if [ "$CHAT_ALB_DNS" = "pending..." ] || [ "$ADMIN_ALB_DNS" = "pending..." ] || 
     echo "   kubectl get ingress -n ${DIAL_NAMESPACE}"
     echo ""
 fi
+check_lic_ins() {
+  local lic_ins_namespace="$DIAL_NAMESPACE"
+  local lic_ins_prefix="${DIAL_RELEASE_NAME}-lic-ins"
+  local lic_ins_deployment="${DIAL_RELEASE_NAME}-lic-ins"
+  for i in {1..5}; do
+      echo "Wait iteration $i: $(date +%T)"
+      pod_name=$(kubectl get pods --sort-by=.metadata.creationTimestamp -n "$lic_ins_namespace" -o name | grep "$lic_ins_prefix" | tail -n 1 | cut -d/ -f2)
+      if [[ $(grep -c . <<<"$pod_name") > 1 ]]; then
+      echo "Pod name is malformed, exiting..."
+      exit 1
+      fi
+      if [[ -z "$pod_name" ]]; then
+      echo "Pod name is empty, exiting..."
+      exit 1
+      fi
+      echo "pod name $pod_name"
+      last_output=$(kubectl logs -n "$lic_ins_namespace" "$pod_name" | grep "Setting up..." -A 1 | tail -n 1)
+      if [[ "$last_output" == "OK" ]]; then
+      echo "EXIT CONDITION MET"
+      kubectl delete deployment "$lic_ins_deployment" -n "$lic_ins_namespace"
+      break
+      elif [[ -n "$last_output" ]]; then
+      echo "EXIT CONDITION NOT MET! Last output: $last_output"
+      exit 1
+      fi
+      sleep 2
+  done
+}
+
+install_knative_with_istio() {
+    echo "Installing knative-serving"
+    kubectl apply -f https://github.com/knative/serving/releases/download/knative-v1.21.0/serving-crds.yaml
+    kubectl apply -f https://github.com/knative/serving/releases/download/knative-v1.21.0/serving-core.yaml
+
+    echo "Installing istioctl..."
+    curl -sL https://istio.io/downloadIstioctl | sh -
+    export PATH=$HOME/.istioctl/bin:$PATH
+
+    echo "Installing istio on cluster..."
+    istioctl install -y
+
+    echo "Putting istio pods on dynamic nodegroup"
+    for d in istiod istio-ingressgateway; do
+            kubectl -n istio-system patch deployment $d \
+            --type merge \
+            -p '{"spec":{"template":{"spec":{"nodeSelector":{"workload":"dynamic"},"tolerations":[{"key":"dedicated","operator":"Equal","value":"dynamic","effect":"NoSchedule"}]}}}}'
+    done
+
+    kubectl apply -f https://github.com/knative-extensions/net-istio/releases/download/knative-v1.21.0/net-istio.yaml
+    kubectl apply -f https://github.com/knative/serving/releases/download/knative-v1.21.0/serving-default-domain.yaml
+
+    echo "Putting knative pods on system nodegroup"
+    for d in controller webhook activator autoscaler net-istio-controller net-istio-webhook; do
+        kubectl -n knative-serving patch deployment $d \
+        --type merge \
+        -p '{"spec":{"template":{"spec":{"nodeSelector":{"workload":"system"},"tolerations":[{"key":"dedicated","operator":"Equal","value":"system","effect":"NoSchedule"}]}}}}'
+    done
+    echo "Patching knative config..."
+    kubectl patch configmap/config-autoscaler --namespace knative-serving --type merge --patch '{"data":{"allow-zero-initial-scale":"true"}}'
+    kubectl patch configmap/config-network --namespace knative-serving --type merge --patch '{"data":{"ingress-class":"istio.ingress.networking.knative.dev"}}'
+    kubectl -n knative-serving patch cm config-features --type merge -p '{
+     "data": {
+       "kubernetes.podspec-nodeselector": "enabled",
+       "kubernetes.podspec-tolerations": "enabled"
+     }
+    }'
+
+    kubectl -n knative-serving patch configmap config-deployment --type merge \
+      -p "{\"data\":{\"registries-skipping-tag-resolving\":\"$AWS_ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com\"}}"
+
+    echo "Enabling istio sidecar injection on knative..."
+    kubectl label namespace knative-serving istio-injection=enabled
+
+    echo "Patching App-Controller Service Account role with needed permissions..."
+    kubectl apply -f app-controller-sa-role.yaml
+
+    echo "Restarting relevant pods to set new configs..."
+    kubectl rollout restart deployment autoscaler -n knative-serving
+    kubectl rollout restart deployment controller -n knative-serving
+    kubectl rollout restart deployment "${DIAL_RELEASE_NAME}-app-controller" -n "$DIAL_NAMESPACE"
+}
+
+check_lic_ins
+install_knative_with_istio
 
 echo "📝 Add these DNS records to your domain provider:"
 echo "=========================================="

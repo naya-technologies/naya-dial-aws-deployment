@@ -66,17 +66,17 @@ Parameters:
 
   DynamicNodeMinSize:
     Type: Number
-    Default: 2
+    Default: 3
     Description: Minimum size of dynamic workers node group
 
   DynamicNodeMaxSize:
     Type: Number
-    Default: 2
+    Default: 3
     Description: Maximum size of dynamic workers node group
 
   DynamicNodeDesiredSize:
     Type: Number
-    Default: 2
+    Default: 3
     Description: Desired size of dynamic workers node group
 
   SystemNodeInstanceType:
