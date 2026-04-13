@@ -578,6 +578,13 @@ sinks:
         },
     },
     'rag': {
+        'updateStrategy': {
+            'type': 'RollingUpdate',
+            'rollingUpdate': {
+                'maxSurge': 0,
+                'maxUnavailable': 1,
+            },
+        },
         'env': {
             'DIAL_URL': core_service_url,
             'DIAL_API_KEY': os.environ['DIAL_API_KEY'],

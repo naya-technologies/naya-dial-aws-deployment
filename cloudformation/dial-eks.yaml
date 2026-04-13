@@ -43,6 +43,11 @@ Parameters:
     Type: Number
     Default: 1
 
+  CoreNodeDiskSize:
+    Type: Number
+    Default: 200
+    Description: 'Root EBS volume size in GiB for the core node group'
+
   RagNodeInstanceType:
     Type: String
     Default: 'c6i.xlarge'
@@ -312,6 +317,7 @@ Resources:
       CapacityType: ON_DEMAND
       InstanceTypes:
         - !Ref CoreNodeInstanceType
+      DiskSize: !Ref CoreNodeDiskSize
       ScalingConfig:
         MinSize: !Ref CoreNodeMinSize
         MaxSize: !Ref CoreNodeMaxSize
