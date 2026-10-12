@@ -1,0 +1,13 @@
+{{- if .Values.adminRdsIam.caBundle.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.adminRdsIam.caBundle.configMapName }}
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    app.kubernetes.io/name: dial-admin-rds-ca
+    app.kubernetes.io/instance: {{ .Release.Name }}
+data:
+  {{ .Values.adminRdsIam.caBundle.key }}: |-
+{{ .Files.Get .Values.adminRdsIam.caBundle.file | indent 4 }}
+{{- end }}

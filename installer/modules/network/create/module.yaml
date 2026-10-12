@@ -1,0 +1,17 @@
+slot: network
+providers: [create]
+description: Creates a new VPC with two public and two private subnets, NAT, and the security groups DIAL needs.
+requires: []
+provides:
+  - VPCId
+  - PublicSubnet1Id
+  - PublicSubnet2Id
+  - PrivateSubnet1Id
+  - PrivateSubnet2Id
+  - PrivateRouteTableId
+  - ALBSecurityGroupId
+  - EKSSecurityGroupId
+  - RDSSecurityGroupId
+  - RedisSecurityGroupId
+  - VPCESecurityGroupId
+  - AlbSubnetIds          # subnets the load balancer is placed in (public or private, by exposure)

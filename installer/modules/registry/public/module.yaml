@@ -1,0 +1,5 @@
+slot: registry
+providers: [public]
+description: Images are pulled by the cluster directly from the AWS Marketplace registry.
+requires: []
+provides: []

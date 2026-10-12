@@ -1,0 +1,5 @@
+slot: links
+providers: [default]
+description: Security group rules between the load balancer, worker nodes and VPC endpoints.
+requires: [network, compute]
+provides: []

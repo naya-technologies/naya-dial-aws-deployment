@@ -1,0 +1,39 @@
+# Cluster Autoscaler is cluster infrastructure and intentionally uses a
+# separate Helm release in kube-system rather than the DIAL umbrella chart.
+fullnameOverride: cluster-autoscaler
+
+cloudProvider: aws
+
+autoDiscovery:
+  # Set by cluster-autoscaler-bootstrap.sh for the target cluster.
+  clusterName: ""
+  # Managed EKS node groups share the first two discovery tags. The explicit
+  # node-group tag keeps core, system, and RAG outside autoscaler ownership.
+  tags:
+    - "k8s.io/cluster-autoscaler/enabled=true"
+    - "k8s.io/cluster-autoscaler/{{ .Values.autoDiscovery.clusterName }}=owned"
+    - "eks:nodegroup-name={{ .Values.autoDiscovery.clusterName }}-dynamic"
+
+image:
+  repository: registry.k8s.io/autoscaling/cluster-autoscaler
+  # Set by cluster-autoscaler-bootstrap.sh after checking the EKS minor.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+rbac:
+  create: true
+  serviceAccount:
+    create: true
+    name: cluster-autoscaler
+
+replicaCount: 1
+priorityClassName: system-cluster-critical
+
+# Keep cluster infrastructure away from the dynamic pool that it controls.
+nodeSelector:
+  workload: core
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 300Mi

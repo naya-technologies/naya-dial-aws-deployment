@@ -1,0 +1,5 @@
+slot: endpoints
+providers: [none]
+description: No VPC endpoints are created (the network already provides a path to AWS services, or they exist already).
+requires: [network]
+provides: []

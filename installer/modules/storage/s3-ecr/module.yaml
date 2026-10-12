@@ -1,0 +1,5 @@
+slot: storage
+providers: [default]
+description: S3 bucket for DIAL data and the ECR repositories used by application builds.
+requires: []
+provides: [S3BucketName, S3BucketArn, CodeAppRepositoryUri, DeploymentManagerRepositoryArn, DeploymentManagerRepositoryUri]

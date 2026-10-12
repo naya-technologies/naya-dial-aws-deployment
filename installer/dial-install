@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# DIAL installer launcher. Needs only Python 3.9+ (preinstalled in AWS CloudShell).
+set -euo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "python3 is required. In AWS CloudShell it is already installed." >&2
+  exit 1
+fi
+python3 - <<'PY' || { echo "Python 3.9 or newer is required." >&2; exit 1; }
+import sys
+sys.exit(0 if sys.version_info >= (3, 9) else 1)
+PY
+
+# Tools installed by `dial-install install-tools` live here.
+export PATH="$HERE/bin:$HOME/.dial-install/bin:$PATH"
+export PYTHONPATH="$HERE/src${PYTHONPATH:+:$PYTHONPATH}"
+export PYTHONDONTWRITEBYTECODE=1
+
+exec python3 -m dial_install "$@"

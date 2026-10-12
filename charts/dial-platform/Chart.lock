@@ -1,0 +1,42 @@
+dependencies:
+- name: dial
+  repository: https://d2w6p7i2gnitgl.cloudfront.net/helm
+  version: 5.17.0
+- name: dial-admin
+  repository: https://d2w6p7i2gnitgl.cloudfront.net/helm
+  version: 0.17.0
+- name: aws-load-balancer-controller
+  repository: https://d2w6p7i2gnitgl.cloudfront.net/helm
+  version: 1.14.1
+- name: dial-extension
+  repository: https://d2w6p7i2gnitgl.cloudfront.net/helm
+  version: 2.1.0
+- name: dial-extension
+  repository: https://d2w6p7i2gnitgl.cloudfront.net/helm
+  version: 2.1.0
+- name: dial-extension
+  repository: https://d2w6p7i2gnitgl.cloudfront.net/helm
+  version: 2.1.0
+- name: dial-extension
+  repository: https://d2w6p7i2gnitgl.cloudfront.net/helm
+  version: 2.1.0
+- name: dial-extension
+  repository: https://d2w6p7i2gnitgl.cloudfront.net/helm
+  version: 2.1.0
+- name: dial-extension
+  repository: https://d2w6p7i2gnitgl.cloudfront.net/helm
+  version: 2.1.0
+- name: dial-extension
+  repository: https://d2w6p7i2gnitgl.cloudfront.net/helm
+  version: 2.1.0
+- name: dial-extension
+  repository: https://d2w6p7i2gnitgl.cloudfront.net/helm
+  version: 2.1.0
+- name: influxdb2
+  repository: https://d2w6p7i2gnitgl.cloudfront.net/helm
+  version: 2.1.2
+- name: grafana
+  repository: https://d2w6p7i2gnitgl.cloudfront.net/helm
+  version: 10.5.12
+digest: sha256:1ffac8d969ca7b88f8d7d23e123c0fa47077c7664f98e531d1c74f3c59fe75f8
+generated: '2026-09-17T16:54:44.816347+00:00'

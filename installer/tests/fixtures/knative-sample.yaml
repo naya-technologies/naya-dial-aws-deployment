@@ -1,0 +1,9 @@
+# Shaped like the upstream Knative release manifests (image references pinned by digest).
+image: gcr.io/knative-releases/knative.dev/serving/cmd/activator@sha256:29035e4d3c4b6765dac3a0dba57dae651e8742d2b8066f25fb43047b0c92a42e
+image: gcr.io/knative-releases/knative.dev/serving/cmd/autoscaler@sha256:77ab7c94e5e157fddf9fcb4d315647798793b0687dfd455a4b51ef49e7f7b5b1
+image: gcr.io/knative-releases/knative.dev/serving/cmd/controller@sha256:460c8fc20377cddf88572dfd619e00e15f4659f670cca7ae3dfc88541ef4b9cc
+image: gcr.io/knative-releases/knative.dev/serving/cmd/webhook@sha256:a0040079e4c7e7ec16c58b12a5f1ca360af7b7e4f45cc2b19323a43ddc0187c6
+image: gcr.io/knative-releases/knative.dev/serving/cmd/queue@sha256:d50d64cb5e12095d3fe0ff7e3ac260824ec079cc2e8ef76c4474046812a4c0be
+image: gcr.io/knative-releases/knative.dev/net-istio/cmd/controller@sha256:508425746c0f8ec6ffe4921f095353c539a342fffcd18e1fc91dcbf809febe65
+image: gcr.io/knative-releases/knative.dev/net-istio/cmd/webhook@sha256:98045c046c0c8b1e34a2193ec7afa572dd0c5dce5debacb4630b43be587e05ad
+queue-sidecar-image: gcr.io/knative-releases/knative.dev/serving/cmd/queue@sha256:d50d64cb5e12095d3fe0ff7e3ac260824ec079cc2e8ef76c4474046812a4c0be

@@ -1,0 +1,5 @@
+slot: database
+providers: [aurora-create]
+description: Aurora PostgreSQL Serverless v2. The master password is read from the customer's secret by CloudFormation itself.
+requires: [network, compute]
+provides: [DBEndpoint, DBPort, DBName, ClusterResourceId]

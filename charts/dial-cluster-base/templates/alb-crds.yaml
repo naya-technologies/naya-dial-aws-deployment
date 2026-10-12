@@ -1,0 +1,4 @@
+{{- if .Values.loadBalancerCrds.enabled }}
+{{- /* Keep the CRDs (and every Ingress resource that depends on them) if this release is ever uninstalled. */}}
+{{ regexReplaceAll "(?m)^  annotations:\n" (.Files.Get "files/alb-crds.yaml") "  annotations:\n    helm.sh/resource-policy: keep\n" }}
+{{- end }}

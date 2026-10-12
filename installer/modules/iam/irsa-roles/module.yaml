@@ -1,0 +1,5 @@
+slot: iam
+providers: [default]
+description: IAM roles for service accounts (core, Bedrock, app controller, deployment manager, ALB controller, admin backend).
+requires: [compute, storage, cache, database]
+provides: [CoreRoleArn, BedrockRoleArn, AppControllerRoleArn, DeploymentManagerRoleArn, ALBControllerRoleArn, AdminBackendRDSRoleArn]

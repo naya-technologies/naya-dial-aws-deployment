@@ -1,0 +1,18 @@
+# DIAL installation config - minimal example.
+# Everything not listed here uses a safe default:
+#   new VPC, internal load balancer, Cognito users, new Aurora PostgreSQL,
+#   new Redis, standard node sizes, analytics on.
+
+apiVersion: dial/v1
+name: acme
+release: latest                  # or a release id, e.g. 2026.10.1
+
+aws:
+  region: us-east-1
+
+domain:
+  base: dial.acme.example          # chat.dial.acme.example, admin.dial.acme.example, ...
+  certificate_arn: arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000
+
+secrets:
+  arn: arn:aws:secretsmanager:us-east-1:123456789012:secret:dial/acme-AbCdEf

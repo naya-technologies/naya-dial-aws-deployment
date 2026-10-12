@@ -1,0 +1,41 @@
+# Istio configuration used to pre-render assets/istio/istio-<version>.yaml (see tools/render_istio.py).
+# The control plane and the gateway run on the "dynamic" node group; the gateway gets an NLB without client IP preservation.
+apiVersion: install.istio.io/v1alpha1
+kind: IstioOperator
+metadata:
+  name: dial
+  namespace: istio-system
+spec:
+  profile: default
+  components:
+    pilot:
+      enabled: true
+      k8s:
+        nodeSelector:
+          workload: dynamic
+        tolerations:
+          - {key: dedicated, operator: Equal, value: dynamic, effect: NoSchedule}
+        resources:
+          requests: {cpu: 500m, memory: 2Gi}
+    ingressGateways:
+      - name: istio-ingressgateway
+        enabled: true
+        k8s:
+          nodeSelector:
+            workload: dynamic
+          tolerations:
+            - {key: dedicated, operator: Equal, value: dynamic, effect: NoSchedule}
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+          # Only HTTP: no Gateway serves TLS here, and an exposed 443 shows up as an unhealthy load balancer target.
+          service:
+            ports:
+              - {name: status-port, port: 15021, targetPort: 15021}
+              - {name: http2, port: 80, targetPort: 8080}
+          serviceAnnotations:
+            # An internal NLB created by the AWS Load Balancer Controller, which the DIAL chart installs.
+            # Applications use it only from inside the VPC.
+            service.beta.kubernetes.io/aws-load-balancer-type: external
+            service.beta.kubernetes.io/aws-load-balancer-scheme: internal
+            service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: instance
+            service.beta.kubernetes.io/aws-load-balancer-target-group-attributes: preserve_client_ip.enabled=false

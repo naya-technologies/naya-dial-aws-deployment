@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards-dial
+  labels:
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/component: dashboards
+    app.kubernetes.io/instance: "{{ .Release.Name }}"
+data:
+  dial_analytics.json: |
+{{- .Files.Get "dashboards/dial_analytics.json" | nindent 4 }}

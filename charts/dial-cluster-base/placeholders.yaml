@@ -1,0 +1,9 @@
+# Placeholder contract of the dial-cluster-base chart (see ../dial-platform/placeholders.yaml for the format).
+apiVersion: dial-placeholders/v1
+placeholders:
+  NAMESPACE:
+    source: constant
+    description: Kubernetes namespace of the DIAL release.
+  STORAGE_CLASS_IS_DEFAULT:
+    source: derived
+    description: "`true` when the cluster has no default storage class yet, otherwise `false`."

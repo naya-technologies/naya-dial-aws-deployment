@@ -1,0 +1,5 @@
+slot: cni
+providers: [vpc-cni]
+description: Pods get addresses from the VPC (the Amazon VPC CNI add-on that EKS installs). Nothing extra to deploy.
+requires: [compute]
+provides: []

@@ -1,0 +1,501 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'DIAL IAM Roles for Service Accounts (IRSA)'
+
+Parameters:
+  DeploymentName:
+    Type: String
+    Description: Base deployment name used as a prefix for stable IAM role names (must keep resulting RoleName <= 64 chars)
+  OIDCProviderArn:
+    Type: String
+  OIDCProviderUrl:
+    Type: String
+  OIDCProviderIssuer:
+    Type: String
+    Description: EKS OIDC issuer host and path without the https:// prefix
+  DeploymentManagerRepositoryArn:
+    Type: String
+    Description: ARN of the fixed ECR repository used by Deployment Manager
+  S3BucketName:
+    Type: String
+  RedisCacheArn:
+    Type: String
+  RedisUserArn:
+    Type: String
+  AdminDatabaseClusterResourceId:
+    Type: String
+    Description: Aurora cluster resource ID used by the rds-db:connect resource ARN
+  AdminDatabaseUser:
+    Type: String
+    Default: dial_admin_iam
+    AllowedPattern: '^[a-z_][a-z0-9_]{0,62}$'
+    ConstraintDescription: Must be a lowercase PostgreSQL identifier containing at most 63 characters
+  KubernetesNamespace:
+    Type: String
+    Default: dial
+    Description: Namespace of the DIAL release; every role trusts only its own service account in it
+  AdminBackendServiceAccountName:
+    Type: String
+    Default: dial-admin-backend
+
+Resources:
+  CoreServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-core-service-role'
+      AssumeRolePolicyDocument: !Sub
+        - |
+          {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Principal": { "Federated": "${ProviderArn}" },
+                "Action": "sts:AssumeRoleWithWebIdentity",
+                "Condition": {
+                  "StringEquals": {
+                    "${Issuer}:aud": "sts.amazonaws.com",
+                    "${Issuer}:sub": "system:serviceaccount:${Namespace}:dial-core"
+                  }
+                }
+              }
+            ]
+          }
+        - ProviderArn: !Ref OIDCProviderArn
+          Issuer: !Ref OIDCProviderIssuer
+          Namespace: !Ref KubernetesNamespace
+      Policies:
+        - PolicyName: DialBucketAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: 's3:*'
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:s3:::${S3BucketName}'
+                  - !Sub 'arn:${AWS::Partition}:s3:::${S3BucketName}/*'
+        - PolicyName: ManagedSecretsAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'secretsmanager:CreateSecret'
+                  - 'secretsmanager:GetSecretValue'
+                  - 'secretsmanager:PutSecretValue'
+                  - 'secretsmanager:DescribeSecret'
+                  - 'secretsmanager:DeleteSecret'
+                Resource: !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:dial-managed-*'
+        - PolicyName: ElastiCacheAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: ['elasticache:Connect']
+                Resource: [!Ref RedisCacheArn, !Ref RedisUserArn]
+        - PolicyName: LicenseManagerReadAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'license-manager:ListDistributedGrants'
+                  - 'license-manager:ListLicenseAssetRulesets'
+                  - 'license-manager:ListLicenseConfigurations'
+                  - 'license-manager:ListLicenseConfigurationsForOrganization'
+                  - 'license-manager:ListReceivedLicenses'
+                  - 'license-manager:GetServiceSettings'
+                  - 'license-manager:ListAssetsForLicenseAssetGroup'
+                  - 'license-manager:GetLicenseAssetRuleset'
+                  - 'license-manager:ListUsageForLicenseConfiguration'
+                  - 'license-manager:ListLicenseSpecificationsForResource'
+                  - 'license-manager:GetLicenseManagerReportGenerator'
+                  - 'license-manager:ListTagsForResource'
+                  - 'license-manager:ListAssociationsForLicenseConfiguration'
+                  - 'license-manager:GetLicenseConfiguration'
+                  - 'license-manager:ListReceivedGrants'
+                  - 'license-manager:GetLicenseConversionTask'
+                  - 'license-manager:GetLicenseAssetGroup'
+                  - 'license-manager:ListReceivedLicensesForOrganization'
+                  - 'license-manager:ListResourceInventory'
+                  - 'license-manager:ListLicenseConversionTasks'
+                  - 'license-manager:ListLicenseAssetGroups'
+                  - 'license-manager:ListTokens'
+                  - 'license-manager:GetAccessToken'
+                  - 'license-manager:ListLicenses'
+                  - 'license-manager:ListLicenseManagerReportGenerators'
+                  - 'license-manager:GetLicenseUsage'
+                  - 'license-manager:CheckoutLicense'
+                  - 'license-manager:GetLicense'
+                  - 'license-manager:ListFailuresForLicenseConfigurationOperations'
+                  - 'license-manager:ListLicenseVersions'
+                  - 'license-manager:GetGrant'
+                  - 'license-manager:ListReceivedGrantsForOrganization'
+                Resource: '*'
+
+  BedrockServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-bedrock-service-role'
+      AssumeRolePolicyDocument: !Sub
+        - |
+          {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Principal": { "Federated": "${ProviderArn}" },
+                "Action": "sts:AssumeRoleWithWebIdentity",
+                "Condition": {
+                  "StringEquals": {
+                    "${Issuer}:aud": "sts.amazonaws.com",
+                    "${Issuer}:sub": "system:serviceaccount:${Namespace}:dial-bedrock"
+                  }
+                }
+              }
+            ]
+          }
+        - ProviderArn: !Ref OIDCProviderArn
+          Issuer: !Ref OIDCProviderIssuer
+          Namespace: !Ref KubernetesNamespace
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonBedrockFullAccess'
+
+  AppControllerServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${DeploymentName}-app-controller-role'
+      AssumeRolePolicyDocument: !Sub
+        - |
+          {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Principal": { "Federated": "${ProviderArn}" },
+                "Action": "sts:AssumeRoleWithWebIdentity",
+                "Condition": {
+                  "StringEquals": {
+                    "${Issuer}:aud": "sts.amazonaws.com",
+                    "${Issuer}:sub": "system:serviceaccount:${Namespace}:dial-app-controller"
+                  }
+                }
+              }
+            ]
+          }
+        - ProviderArn: !Ref OIDCProviderArn
+          Issuer: !Ref OIDCProviderIssuer
+          Namespace: !Ref KubernetesNamespace
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryFullAccess'
+
+  DeploymentManagerServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${DeploymentName}-deployment-manager-role'
+      AssumeRolePolicyDocument: !Sub
+        - |
+          {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Principal": { "Federated": "${ProviderArn}" },
+                "Action": "sts:AssumeRoleWithWebIdentity",
+                "Condition": {
+                  "StringEquals": {
+                    "${Issuer}:aud": "sts.amazonaws.com",
+                    "${Issuer}:sub": "system:serviceaccount:${Namespace}:dial-deployment-manager"
+                  }
+                }
+              }
+            ]
+          }
+        - ProviderArn: !Ref OIDCProviderArn
+          Issuer: !Ref OIDCProviderIssuer
+          Namespace: !Ref KubernetesNamespace
+      Policies:
+        - PolicyName: DeploymentManagerEcrAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: EcrAuthorization
+                Effect: Allow
+                Action:
+                  - 'ecr:GetAuthorizationToken'
+                Resource: '*'
+              - Sid: DeploymentManagerRepositoryAccess
+                Effect: Allow
+                Action:
+                  - 'ecr:BatchCheckLayerAvailability'
+                  - 'ecr:BatchDeleteImage'
+                  - 'ecr:BatchGetImage'
+                  - 'ecr:CompleteLayerUpload'
+                  - 'ecr:DescribeImages'
+                  - 'ecr:GetDownloadUrlForLayer'
+                  - 'ecr:InitiateLayerUpload'
+                  - 'ecr:ListImages'
+                  - 'ecr:PutImage'
+                  - 'ecr:UploadLayerPart'
+                Resource: !Ref DeploymentManagerRepositoryArn
+
+  ALBControllerPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${AWS::StackName}-alb-controller-policy'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - 'iam:CreateServiceLinkedRole'
+            Resource: '*'
+            Condition:
+              "StringEquals":
+                "iam:AWSServiceName": elasticloadbalancing.amazonaws.com
+          - Effect: Allow
+            Action:
+              - 'ec2:DescribeAccountAttributes'
+              - 'ec2:DescribeAddresses'
+              - 'ec2:DescribeAvailabilityZones'
+              - 'ec2:DescribeInternetGateways'
+              - 'ec2:DescribeVpcs'
+              - 'ec2:DescribeVpcPeeringConnections'
+              - 'ec2:DescribeSubnets'
+              - 'ec2:DescribeSecurityGroups'
+              - 'ec2:DescribeInstances'
+              - 'ec2:DescribeNetworkInterfaces'
+              - 'ec2:DescribeTags'
+              - 'ec2:GetCoipPoolUsage'
+              - 'ec2:DescribeCoipPools'
+              - 'ec2:GetSecurityGroupsForVpc'
+              - 'ec2:DescribeIpamPools'
+              - 'ec2:DescribeRouteTables'
+              - 'elasticloadbalancing:DescribeLoadBalancers'
+              - 'elasticloadbalancing:DescribeLoadBalancerAttributes'
+              - 'elasticloadbalancing:DescribeListeners'
+              - 'elasticloadbalancing:DescribeListenerCertificates'
+              - 'elasticloadbalancing:DescribeSSLPolicies'
+              - 'elasticloadbalancing:DescribeRules'
+              - 'elasticloadbalancing:DescribeTargetGroups'
+              - 'elasticloadbalancing:DescribeTargetGroupAttributes'
+              - 'elasticloadbalancing:DescribeTargetHealth'
+              - 'elasticloadbalancing:DescribeTags'
+              - 'elasticloadbalancing:DescribeTrustStores'
+              - 'elasticloadbalancing:DescribeListenerAttributes'
+              - 'elasticloadbalancing:DescribeCapacityReservation'
+            Resource: '*'
+          - Effect: Allow
+            Action:
+              - 'cognito-idp:DescribeUserPoolClient'
+              - 'acm:ListCertificates'
+              - 'acm:DescribeCertificate'
+              - 'iam:ListServerCertificates'
+              - 'iam:GetServerCertificate'
+              - 'waf-regional:GetWebACL'
+              - 'waf-regional:GetWebACLForResource'
+              - 'waf-regional:AssociateWebACL'
+              - 'waf-regional:DisassociateWebACL'
+              - 'wafv2:GetWebACL'
+              - 'wafv2:GetWebACLForResource'
+              - 'wafv2:AssociateWebACL'
+              - 'wafv2:DisassociateWebACL'
+              - 'shield:GetSubscriptionState'
+              - 'shield:DescribeProtection'
+              - 'shield:CreateProtection'
+              - 'shield:DeleteProtection'
+            Resource: '*'
+          - Effect: Allow
+            Action:
+              - 'ec2:AuthorizeSecurityGroupIngress'
+              - 'ec2:RevokeSecurityGroupIngress'
+            Resource: '*'
+          - Effect: Allow
+            Action:
+              - 'ec2:CreateSecurityGroup'
+            Resource: '*'
+          - Effect: Allow
+            Action:
+              - 'ec2:CreateTags'
+            Resource: 'arn:aws:ec2:*:*:security-group/*'
+            Condition:
+              "StringEquals":
+                "ec2:CreateAction": CreateSecurityGroup
+              "Null":
+                "aws:RequestTag/elbv2.k8s.aws/cluster": 'false'
+          - Effect: Allow
+            Action:
+              - 'ec2:CreateTags'
+              - 'ec2:DeleteTags'
+            Resource: 'arn:aws:ec2:*:*:security-group/*'
+            Condition:
+              "Null":
+                "aws:RequestTag/elbv2.k8s.aws/cluster": 'true'
+                "aws:ResourceTag/elbv2.k8s.aws/cluster": 'false'
+          - Effect: Allow
+            Action:
+              - 'ec2:AuthorizeSecurityGroupIngress'
+              - 'ec2:RevokeSecurityGroupIngress'
+              - 'ec2:DeleteSecurityGroup'
+            Resource: '*'
+            Condition:
+              "Null":
+                "aws:ResourceTag/elbv2.k8s.aws/cluster": 'false'
+          - Effect: Allow
+            Action:
+              - 'elasticloadbalancing:CreateLoadBalancer'
+              - 'elasticloadbalancing:CreateTargetGroup'
+            Resource: '*'
+            Condition:
+              "Null":
+                "aws:RequestTag/elbv2.k8s.aws/cluster": 'false'
+          - Effect: Allow
+            Action:
+              - 'elasticloadbalancing:CreateListener'
+              - 'elasticloadbalancing:DeleteListener'
+              - 'elasticloadbalancing:CreateRule'
+              - 'elasticloadbalancing:DeleteRule'
+            Resource: '*'
+          - Effect: Allow
+            Action:
+              - 'elasticloadbalancing:AddTags'
+              - 'elasticloadbalancing:RemoveTags'
+            Resource:
+              - 'arn:aws:elasticloadbalancing:*:*:targetgroup/*/*'
+              - 'arn:aws:elasticloadbalancing:*:*:loadbalancer/net/*/*'
+              - 'arn:aws:elasticloadbalancing:*:*:loadbalancer/app/*/*'
+            Condition:
+              "Null":
+                "aws:RequestTag/elbv2.k8s.aws/cluster": 'true'
+                "aws:ResourceTag/elbv2.k8s.aws/cluster": 'false'
+          - Effect: Allow
+            Action:
+              - 'elasticloadbalancing:AddTags'
+              - 'elasticloadbalancing:RemoveTags'
+            Resource:
+              - 'arn:aws:elasticloadbalancing:*:*:listener/net/*/*/*'
+              - 'arn:aws:elasticloadbalancing:*:*:listener/app/*/*/*'
+              - 'arn:aws:elasticloadbalancing:*:*:listener-rule/net/*/*/*'
+              - 'arn:aws:elasticloadbalancing:*:*:listener-rule/app/*/*/*'
+          - Effect: Allow
+            Action:
+              - 'elasticloadbalancing:ModifyLoadBalancerAttributes'
+              - 'elasticloadbalancing:SetIpAddressType'
+              - 'elasticloadbalancing:SetSecurityGroups'
+              - 'elasticloadbalancing:SetSubnets'
+              - 'elasticloadbalancing:DeleteLoadBalancer'
+              - 'elasticloadbalancing:ModifyTargetGroup'
+              - 'elasticloadbalancing:ModifyTargetGroupAttributes'
+              - 'elasticloadbalancing:DeleteTargetGroup'
+              - 'elasticloadbalancing:ModifyListenerAttributes'
+              - 'elasticloadbalancing:ModifyCapacityReservation'
+              - 'elasticloadbalancing:ModifyIpPools'
+            Resource: '*'
+            Condition:
+              "Null":
+                "aws:ResourceTag/elbv2.k8s.aws/cluster": 'false'
+          - Effect: Allow
+            Action:
+              - 'elasticloadbalancing:AddTags'
+            Resource:
+              - 'arn:aws:elasticloadbalancing:*:*:targetgroup/*/*'
+              - 'arn:aws:elasticloadbalancing:*:*:loadbalancer/net/*/*'
+              - 'arn:aws:elasticloadbalancing:*:*:loadbalancer/app/*/*'
+            Condition:
+              "StringEquals":
+                "elasticloadbalancing:CreateAction":
+                  - CreateTargetGroup
+                  - CreateLoadBalancer
+              "Null":
+                "aws:RequestTag/elbv2.k8s.aws/cluster": 'false'
+          - Effect: Allow
+            Action:
+              - 'elasticloadbalancing:RegisterTargets'
+              - 'elasticloadbalancing:DeregisterTargets'
+            Resource: 'arn:aws:elasticloadbalancing:*:*:targetgroup/*/*'
+          - Effect: Allow
+            Action:
+              - 'elasticloadbalancing:SetWebAcl'
+              - 'elasticloadbalancing:ModifyListener'
+              - 'elasticloadbalancing:AddListenerCertificates'
+              - 'elasticloadbalancing:RemoveListenerCertificates'
+              - 'elasticloadbalancing:ModifyRule'
+              - 'elasticloadbalancing:SetRulePriorities'
+            Resource: '*'
+
+  ALBControllerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-alb-controller-role'
+      AssumeRolePolicyDocument: !Sub
+        - |
+          {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Principal": { "Federated": "${ProviderArn}" },
+                "Action": "sts:AssumeRoleWithWebIdentity",
+                "Condition": {
+                  "StringEquals": {
+                    "${Issuer}:aud": "sts.amazonaws.com",
+                    "${Issuer}:sub": "system:serviceaccount:${Namespace}:aws-load-balancer-controller"
+                  }
+                }
+              }
+            ]
+          }
+        - ProviderArn: !Ref OIDCProviderArn
+          Issuer: !Ref OIDCProviderIssuer
+          Namespace: !Ref KubernetesNamespace
+      ManagedPolicyArns:
+        - !Ref ALBControllerPolicy
+
+  AdminBackendRDSRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${DeploymentName}-admin-backend-rds-role'
+      AssumeRolePolicyDocument: !Sub
+        - |
+          {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Principal": { "Federated": "${ProviderArn}" },
+                "Action": "sts:AssumeRoleWithWebIdentity",
+                "Condition": {
+                  "StringEquals": {
+                    "${Issuer}:aud": "sts.amazonaws.com",
+                    "${Issuer}:sub": "system:serviceaccount:${ServiceAccountNamespace}:${ServiceAccountName}"
+                  }
+                }
+              }
+            ]
+          }
+        - ProviderArn: !Ref OIDCProviderArn
+          Issuer: !Ref OIDCProviderIssuer
+          ServiceAccountNamespace: !Ref KubernetesNamespace
+          ServiceAccountName: !Ref AdminBackendServiceAccountName
+      Policies:
+        - PolicyName: AdminDatabaseConnect
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: ConnectToAdminDatabase
+                Effect: Allow
+                Action: 'rds-db:connect'
+                Resource: !Sub 'arn:${AWS::Partition}:rds-db:${AWS::Region}:${AWS::AccountId}:dbuser:${AdminDatabaseClusterResourceId}/${AdminDatabaseUser}'
+
+Outputs:
+  CoreRoleArn:
+    Value: !GetAtt CoreServiceRole.Arn
+  BedrockRoleArn:
+    Value: !GetAtt BedrockServiceRole.Arn
+  AppControllerRoleArn:
+    Value: !GetAtt AppControllerServiceRole.Arn
+  DeploymentManagerRoleArn:
+    Value: !GetAtt DeploymentManagerServiceRole.Arn
+  ALBControllerRoleArn:
+    Value: !GetAtt ALBControllerRole.Arn
+  AdminBackendRDSRoleArn:
+    Value: !GetAtt AdminBackendRDSRole.Arn

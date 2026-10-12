@@ -1,0 +1,710 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'DIAL EKS Cluster with OIDC provider'
+
+Parameters:
+  ClusterName:
+    Type: String
+
+  KubernetesVersion:
+    Type: String
+    Default: '1.35'
+
+  PrivateSubnet1Id:
+    Type: String
+
+  PrivateSubnet2Id:
+    Type: String
+
+  # Managed node groups (3 groups: core / rag / dynamic)
+  CoreNodeInstanceType:
+    Type: String
+    Default: 'c6i.xlarge'
+    Description: 'EC2 instance type for core node group (recommended: 4 vCPU / 8 GiB)'
+
+  CoreNodeMinSize:
+    Type: Number
+    Default: 1
+
+  CoreNodeMaxSize:
+    Type: Number
+    Default: 1
+
+  CoreNodeDesiredSize:
+    Type: Number
+    Default: 1
+
+  CoreNodeDiskSize:
+    Type: Number
+    Default: 200
+    Description: 'Root EBS volume size in GiB for the core node group'
+
+  RagNodeInstanceType:
+    Type: String
+    Default: 'c6i.xlarge'
+    Description: 'EC2 instance type for RAG node group (recommended: 4 vCPU / 8 GiB)'
+
+  RagNodeMinSize:
+    Type: Number
+    Default: 1
+
+  RagNodeMaxSize:
+    Type: Number
+    Default: 1
+
+  RagNodeDesiredSize:
+    Type: Number
+    Default: 1
+
+  DynamicNodeInstanceType:
+    Type: String
+    Default: 'c6i.large'
+    Description: 'EC2 instance type for dynamic workers node group (recommended: 2 vCPU / 4 GiB)'
+
+  DynamicNodeMinSize:
+    Type: Number
+    Default: 3
+
+  DynamicNodeMaxSize:
+    Type: Number
+    Default: 3
+
+  DynamicNodeDesiredSize:
+    Type: Number
+    Default: 3
+
+  SystemNodeInstanceType:
+    Type: String
+    Default: 'c6i.large'
+    Description: 'EC2 instance type for system node group (recommended: 2 vCPU / 4 GiB)'
+
+  SystemNodeMinSize:
+    Type: Number
+    Default: 1
+
+  SystemNodeMaxSize:
+    Type: Number
+    Default: 1
+
+  SystemNodeDesiredSize:
+    Type: Number
+    Default: 1
+
+  PublicEndpoint:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: Reachable from the internet (restrict with IAM). When false, run the installer from inside the VPC.
+
+  EnableContainerLogs:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: Enable CloudWatch Container Insights performance metrics and Kubernetes container logs
+
+  Cni:
+    Type: String
+    Default: vpc-cni
+    AllowedValues: [vpc-cni, cilium]
+    Description: Network plugin. With cilium the cluster is created empty first (Phase bootstrap), Cilium is installed, then the nodes and add-ons follow (Phase final).
+
+  Phase:
+    Type: String
+    Default: final
+    AllowedValues: [bootstrap, final]
+    Description: Only used with Cni cilium. bootstrap = control plane without nodes; final = nodes and add-ons.
+
+Conditions:
+  ContainerLogsEnabled: !Equals [!Ref EnableContainerLogs, 'true']
+  UseCilium: !Equals [!Ref Cni, cilium]
+  # Nodes and add-ons exist except while Cilium is being installed on the empty cluster.
+  DeployNodes: !Not [!And [!Condition UseCilium, !Equals [!Ref Phase, bootstrap]]]
+  CiliumAddons: !And [!Condition UseCilium, !Condition DeployNodes]
+  LogsWithNodes: !And [!Condition ContainerLogsEnabled, !Condition DeployNodes]
+
+Resources:
+
+  # EKS Cluster IAM Role
+  EKSClusterRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ClusterName}-cluster-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: eks.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+              - 'sts:TagSession'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonEKSClusterPolicy'
+        - 'arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly'
+        - 'arn:aws:iam::aws:policy/AmazonEKSComputePolicy'
+        - 'arn:aws:iam::aws:policy/AmazonEKSBlockStoragePolicy'
+        - 'arn:aws:iam::aws:policy/AmazonEKSLoadBalancingPolicy'
+        - 'arn:aws:iam::aws:policy/AmazonEKSNetworkingPolicy'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ClusterName}-cluster-role'
+
+  # EKS Node IAM Role
+  EKSNodeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ClusterName}-node-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy'
+        - 'arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy'
+        - 'arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly'
+        # AWS-managed policy for the EBS CSI driver uses the service-role path.
+        - 'arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ClusterName}-node-role'
+
+  # EKS Cluster
+  EKSCluster:
+    Type: AWS::EKS::Cluster
+    Properties:
+      Name: !Ref ClusterName
+      Version: !Ref KubernetesVersion
+      RoleArn: !GetAtt EKSClusterRole.Arn
+      BootstrapSelfManagedAddons: !If [UseCilium, false, true]
+      AccessConfig:
+        AuthenticationMode: API
+      KubernetesNetworkConfig:
+        ServiceIpv4Cidr: 172.20.0.0/16
+        IpFamily: ipv4
+        ElasticLoadBalancing:
+          Enabled: true
+      ResourcesVpcConfig:
+        SubnetIds:
+          - !Ref PrivateSubnet1Id
+          - !Ref PrivateSubnet2Id
+        EndpointPrivateAccess: true
+        EndpointPublicAccess: !Ref PublicEndpoint
+      Logging:
+        ClusterLogging:
+          EnabledTypes:
+            - Type: api
+            - Type: audit
+            - Type: authenticator
+            - Type: controllerManager
+            - Type: scheduler
+      Tags:
+        - Key: Name
+          Value: !Ref ClusterName
+
+  # Managed node groups
+  CoreNodeGroup:
+    Type: AWS::EKS::Nodegroup
+    Condition: DeployNodes
+    DependsOn: EKSCluster
+    Properties:
+      ClusterName: !Ref ClusterName
+      NodegroupName: !Sub '${ClusterName}-core'
+      NodeRole: !GetAtt EKSNodeRole.Arn
+      Subnets:
+        - !Ref PrivateSubnet1Id
+        - !Ref PrivateSubnet2Id
+      CapacityType: ON_DEMAND
+      InstanceTypes:
+        - !Ref CoreNodeInstanceType
+      DiskSize: !Ref CoreNodeDiskSize
+      ScalingConfig:
+        MinSize: !Ref CoreNodeMinSize
+        MaxSize: !Ref CoreNodeMaxSize
+        DesiredSize: !Ref CoreNodeDesiredSize
+      Labels:
+        workload: core
+
+  RagNodeGroup:
+    Type: AWS::EKS::Nodegroup
+    Condition: DeployNodes
+    DependsOn: EKSCluster
+    Properties:
+      ClusterName: !Ref ClusterName
+      NodegroupName: !Sub '${ClusterName}-rag'
+      NodeRole: !GetAtt EKSNodeRole.Arn
+      Subnets:
+        - !Ref PrivateSubnet1Id
+        - !Ref PrivateSubnet2Id
+      CapacityType: ON_DEMAND
+      InstanceTypes:
+        - !Ref RagNodeInstanceType
+      ScalingConfig:
+        MinSize: !Ref RagNodeMinSize
+        MaxSize: !Ref RagNodeMaxSize
+        DesiredSize: !Ref RagNodeDesiredSize
+      Labels:
+        workload: rag
+      Taints:
+        - Key: dedicated
+          Value: rag
+          Effect: NO_SCHEDULE
+
+  DynamicNodeGroup:
+    Type: AWS::EKS::Nodegroup
+    Condition: DeployNodes
+    DependsOn: EKSCluster
+    Properties:
+      ClusterName: !Ref ClusterName
+      NodegroupName: !Sub '${ClusterName}-dynamic'
+      NodeRole: !GetAtt EKSNodeRole.Arn
+      Subnets:
+        - !Ref PrivateSubnet1Id
+        - !Ref PrivateSubnet2Id
+      CapacityType: ON_DEMAND
+      InstanceTypes:
+        - !Ref DynamicNodeInstanceType
+      ScalingConfig:
+        MinSize: !Ref DynamicNodeMinSize
+        MaxSize: !Ref DynamicNodeMaxSize
+        DesiredSize: !Ref DynamicNodeDesiredSize
+      Labels:
+        workload: dynamic
+      Taints:
+        - Key: dedicated
+          Value: dynamic
+          Effect: NO_SCHEDULE
+
+  SystemNodeGroup:
+    Type: AWS::EKS::Nodegroup
+    Condition: DeployNodes
+    DependsOn: EKSCluster
+    Properties:
+      ClusterName: !Ref ClusterName
+      NodegroupName: !Sub '${ClusterName}-system'
+      NodeRole: !GetAtt EKSNodeRole.Arn
+      Subnets:
+        - !Ref PrivateSubnet1Id
+        - !Ref PrivateSubnet2Id
+      CapacityType: ON_DEMAND
+      InstanceTypes:
+        - !Ref SystemNodeInstanceType
+      ScalingConfig:
+        MinSize: !Ref SystemNodeMinSize
+        MaxSize: !Ref SystemNodeMaxSize
+        DesiredSize: !Ref SystemNodeDesiredSize
+      Labels:
+        workload: system
+      Taints:
+        - Key: dedicated
+          Value: system
+          Effect: NO_SCHEDULE
+
+  # OIDC Provider
+  OIDCProvider:
+    Type: AWS::IAM::OIDCProvider
+    Properties:
+      Url: !GetAtt EKSCluster.OpenIdConnectIssuerUrl
+      ClientIdList:
+        - sts.amazonaws.com
+      ThumbprintList:
+        # EKS OIDC thumbprint - valid for all regions
+        - '9e99a48a9960b14926bb7f3b02e22da2b0ab7280'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ClusterName}-oidc-provider'
+
+  # IAM role for aws-ebs-csi-driver controller (IRSA).
+  # Nodes are configured with IMDS hop limit=1 (pods can't reach IMDS), so the controller
+  # must use IRSA (ServiceAccountRoleArn on the EKS addon) to call AWS APIs.
+  EBSCSIDriverRole:
+    Type: AWS::IAM::Role
+    DependsOn: OIDCProvider
+    Properties:
+      RoleName: !Sub '${ClusterName}-ebs-csi-driver-role'
+      # IAM API expects this as a JSON string. Supplying a string here avoids
+      # CloudFormation limitations around using intrinsic functions as map keys.
+      AssumeRolePolicyDocument: !Sub
+        - |
+          {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Principal": { "Federated": "${OIDCProviderArn}" },
+                "Action": "sts:AssumeRoleWithWebIdentity",
+                "Condition": {
+                  "StringEquals": {
+                    "${OIDCIssuer}:aud": "sts.amazonaws.com",
+                    "${OIDCIssuer}:sub": "system:serviceaccount:kube-system:ebs-csi-controller-sa"
+                  }
+                }
+              }
+            ]
+          }
+        - OIDCProviderArn: !GetAtt OIDCProvider.Arn
+          OIDCIssuer: !Select [1, !Split ['https://', !GetAtt EKSCluster.OpenIdConnectIssuerUrl]]
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ClusterName}-ebs-csi-driver-role'
+
+  # Container stdout/stderr is retained independently from the application
+  # Helm release. The explicit log group owns retention and exists before the
+  # collector starts.
+  ContainerApplicationLogGroup:
+    Type: AWS::Logs::LogGroup
+    Condition: ContainerLogsEnabled
+    # Not retained: a retained group keeps its name, so a failed or repeated install could never create it again.
+    Properties:
+      LogGroupName: !Sub '/aws/containerinsights/${ClusterName}/application'
+      RetentionInDays: 30
+
+  # The collector receives short-lived credentials through EKS Pod Identity.
+  # Keep CloudWatch permissions off the shared worker-node role.
+  CloudWatchLogsPodRole:
+    Type: AWS::IAM::Role
+    Condition: ContainerLogsEnabled
+    Properties:
+      RoleName: !Sub '${ClusterName}-cloudwatch-logs-role'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: pods.eks.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+              - 'sts:TagSession'
+            Condition:
+              StringEquals:
+                'aws:RequestTag/eks-cluster-name': !Ref ClusterName
+                'aws:RequestTag/kubernetes-namespace': amazon-cloudwatch
+                'aws:RequestTag/kubernetes-service-account': cloudwatch-agent
+      Policies:
+        - PolicyName: PublishContainerLogs
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: DiscoverLogGroups
+                Effect: Allow
+                Action:
+                  - 'logs:DescribeLogGroups'
+                Resource: '*'
+              - Sid: PublishApplicationLogs
+                Effect: Allow
+                Action:
+                  - 'logs:DescribeLogStreams'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/containerinsights/${ClusterName}/application:*'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ClusterName}-cloudwatch-logs-role'
+
+  # Cluster Autoscaler may change desired capacity only for the managed dynamic
+  # node group. Read-only discovery remains account-wide because the AWS APIs
+  # do not support resource scoping for Describe operations.
+  ClusterAutoscalerPodRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ClusterName}-cluster-autoscaler-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: pods.eks.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+              - 'sts:TagSession'
+            Condition:
+              StringEquals:
+                'aws:RequestTag/eks-cluster-name': !Ref ClusterName
+                'aws:RequestTag/kubernetes-namespace': kube-system
+                'aws:RequestTag/kubernetes-service-account': cluster-autoscaler
+      Policies:
+        - PolicyName: ScaleDynamicNodeGroup
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: DiscoverClusterCapacity
+                Effect: Allow
+                Action:
+                  - 'autoscaling:DescribeAutoScalingGroups'
+                  - 'autoscaling:DescribeAutoScalingInstances'
+                  - 'autoscaling:DescribeLaunchConfigurations'
+                  - 'autoscaling:DescribeScalingActivities'
+                  - 'autoscaling:DescribeTags'
+                  - 'ec2:DescribeImages'
+                  - 'ec2:DescribeInstanceTypes'
+                  - 'ec2:DescribeLaunchTemplateVersions'
+                  - 'ec2:GetInstanceTypesFromInstanceRequirements'
+                  - 'eks:DescribeNodegroup'
+                Resource: '*'
+              - Sid: ScaleOnlyDynamicNodeGroup
+                Effect: Allow
+                Action:
+                  - 'autoscaling:SetDesiredCapacity'
+                  - 'autoscaling:TerminateInstanceInAutoScalingGroup'
+                Resource: !Sub 'arn:${AWS::Partition}:autoscaling:${AWS::Region}:${AWS::AccountId}:autoScalingGroup:*:autoScalingGroupName/*'
+                Condition:
+                  StringEquals:
+                    'aws:ResourceTag/k8s.io/cluster-autoscaler/enabled': 'true'
+                    'aws:ResourceTag/eks:cluster-name': !Ref ClusterName
+                    'aws:ResourceTag/eks:nodegroup-name': !Sub '${ClusterName}-dynamic'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ClusterName}-cluster-autoscaler-role'
+
+  # Managed EKS add-ons installed during the one-time cluster bootstrap.
+  PodIdentityAgentAddon:
+    Type: AWS::EKS::Addon
+    Condition: DeployNodes
+    DependsOn: SystemNodeGroup
+    Properties:
+      ClusterName: !Ref ClusterName
+      AddonName: eks-pod-identity-agent
+      ResolveConflicts: OVERWRITE
+
+  ClusterAutoscalerPodIdentityAssociation:
+    Type: AWS::EKS::PodIdentityAssociation
+    Condition: DeployNodes
+    DependsOn: PodIdentityAgentAddon
+    Properties:
+      ClusterName: !Ref ClusterName
+      Namespace: kube-system
+      ServiceAccount: cluster-autoscaler
+      RoleArn: !GetAtt ClusterAutoscalerPodRole.Arn
+
+  # Install Container Insights performance metrics and the container-log
+  # collector. Traces, Application Signals, GPU/Neuron/OTel exporters, host
+  # logs, and Kubernetes dataplane logs remain disabled.
+  CloudWatchObservabilityAddon:
+    Type: AWS::EKS::Addon
+    Condition: LogsWithNodes
+    DependsOn:
+      - PodIdentityAgentAddon
+      - ContainerApplicationLogGroup
+    Properties:
+      ClusterName: !Ref ClusterName
+      AddonName: amazon-cloudwatch-observability
+      ResolveConflicts: OVERWRITE
+      PodIdentityAssociations:
+        - ServiceAccount: cloudwatch-agent
+          RoleArn: !GetAtt CloudWatchLogsPodRole.Arn
+      ConfigurationValues: |
+        agents:
+          - name: cloudwatch-agent
+        applicationSignals:
+          enabled: false
+        containerInsights:
+          enabled: true
+        dcgmExporter:
+          enabled: false
+        kubeStateMetrics:
+          enabled: false
+        neuronMonitor:
+          enabled: false
+        nodeExporter:
+          enabled: false
+        otelContainerInsights:
+          enabled: false
+        containerLogs:
+          enabled: true
+          fluentBit:
+            config:
+              extraFiles:
+                application-log.conf: |
+                  [INPUT]
+                    Name                tail
+                    Tag                 application.*
+                    Exclude_Path        /var/log/containers/cloudwatch-agent*, /var/log/containers/fluent-bit*
+                    Path                /var/log/containers/*.log
+                    multiline.parser    docker, cri
+                    DB                  /var/fluent-bit/state/flb_container.db
+                    Mem_Buf_Limit       50MB
+                    Skip_Long_Lines     On
+                    Refresh_Interval    10
+                    Rotate_Wait         30
+                    storage.type        filesystem
+                    Read_from_Head      On
+
+                  [INPUT]
+                    Name                tail
+                    Tag                 application.*
+                    Path                /var/log/containers/fluent-bit*
+                    multiline.parser    docker, cri
+                    DB                  /var/fluent-bit/state/flb_log.db
+                    Mem_Buf_Limit       5MB
+                    Skip_Long_Lines     On
+                    Refresh_Interval    10
+                    Read_from_Head      On
+
+                  [INPUT]
+                    Name                tail
+                    Tag                 application.*
+                    Path                /var/log/containers/cloudwatch-agent*
+                    multiline.parser    docker, cri
+                    DB                  /var/fluent-bit/state/flb_cwagent.db
+                    Mem_Buf_Limit       5MB
+                    Skip_Long_Lines     On
+                    Refresh_Interval    10
+                    Read_from_Head      On
+
+                  [FILTER]
+                    Name                aws
+                    Match               application.*
+                    az                  false
+                    ec2_instance_id     false
+                    Enable_Entity       true
+
+                  [FILTER]
+                    Name                kubernetes
+                    Match               application.*
+                    Kube_URL            https://kubernetes.default.svc:443
+                    Kube_Tag_Prefix     application.var.log.containers.
+                    Merge_Log           On
+                    Merge_Log_Key       log_processed
+                    K8S-Logging.Parser  On
+                    K8S-Logging.Exclude Off
+                    Labels              Off
+                    Annotations         Off
+                    Use_Kubelet         On
+                    Kubelet_Port        10250
+                    Buffer_Size         0
+                    Use_Pod_Association Off
+
+                  [OUTPUT]
+                    Name                cloudwatch_logs
+                    Match               application.*
+                    region              ${AWS_REGION}
+                    log_group_name      /aws/containerinsights/${CLUSTER_NAME}/application
+                    log_stream_prefix   ${HOST_NAME}-
+                    auto_create_group   false
+                    extra_user_agent    container-insights
+                    add_entity          true
+                dataplane-log.conf: ""
+                host-log.conf: ""
+        manager:
+          applicationSignals:
+            autoMonitor:
+              monitorAllServices: false
+        tolerations:
+          - operator: Exists
+
+  EBSCSIDriverAddon:
+    Type: AWS::EKS::Addon
+    Condition: DeployNodes
+    DependsOn:
+      - SystemNodeGroup
+      - EBSCSIDriverRole
+    Properties:
+      ClusterName: !Ref ClusterName
+      AddonName: aws-ebs-csi-driver
+      ResolveConflicts: OVERWRITE
+      ServiceAccountRoleArn: !GetAtt EBSCSIDriverRole.Arn
+      ConfigurationValues: |
+        controller:
+          nodeSelector:
+            workload: system
+          tolerations:
+            - key: dedicated
+              operator: Equal
+              value: system
+              effect: NoSchedule
+
+  # With Cilium the control plane reaches the aggregated metrics API through the node, not through a pod address.
+  MetricsServerAddon:
+    Type: AWS::EKS::Addon
+    Condition: DeployNodes
+    DependsOn: SystemNodeGroup
+    Properties:
+      ClusterName: !Ref ClusterName
+      AddonName: metrics-server
+      ResolveConflicts: OVERWRITE
+      ConfigurationValues: !If
+        - UseCilium
+        - |
+          hostNetwork:
+            enabled: true
+          replicas: 1
+          nodeSelector:
+            workload: system
+          tolerations:
+            - key: dedicated
+              operator: Equal
+              value: system
+              effect: NoSchedule
+        - |
+          nodeSelector:
+            workload: system
+          tolerations:
+            - key: dedicated
+              operator: Equal
+              value: system
+              effect: NoSchedule
+
+  # Created by the installer only with Cilium (BootstrapSelfManagedAddons is off, so EKS does not add them).
+  KubeProxyAddon:
+    Type: AWS::EKS::Addon
+    Condition: CiliumAddons
+    DependsOn: SystemNodeGroup
+    Properties:
+      ClusterName: !Ref ClusterName
+      AddonName: kube-proxy
+      ResolveConflicts: OVERWRITE
+
+  CoreDnsAddon:
+    Type: AWS::EKS::Addon
+    Condition: CiliumAddons
+    DependsOn: KubeProxyAddon
+    Properties:
+      ClusterName: !Ref ClusterName
+      AddonName: coredns
+      ResolveConflicts: OVERWRITE
+
+Outputs:
+  ClusterName:
+    Description: EKS Cluster Name
+    Value: !Ref ClusterName
+    Export:
+      Name: !Sub '${AWS::StackName}-ClusterName'
+
+  ClusterArn:
+    Description: EKS Cluster ARN
+    Value: !GetAtt EKSCluster.Arn
+
+  ClusterEndpoint:
+    Description: EKS Cluster Endpoint
+    Value: !GetAtt EKSCluster.Endpoint
+
+  OIDCProviderArn:
+    Description: OIDC Provider ARN
+    Value: !GetAtt OIDCProvider.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-OIDCProviderArn'
+
+  OIDCProviderUrl:
+    Description: OIDC Provider URL
+    Value: !GetAtt EKSCluster.OpenIdConnectIssuerUrl
+    Export:
+      Name: !Sub '${AWS::StackName}-OIDCProviderUrl'
+
+  ClusterSecurityGroupId:
+    Description: EKS Cluster Security Group ID (used by nodes)
+    Value: !GetAtt EKSCluster.ClusterSecurityGroupId
+    Export:
+      Name: !Sub '${AWS::StackName}-ClusterSecurityGroupId'
+
+  NodeRoleArn:
+    Description: Node IAM Role ARN
+    Value: !GetAtt EKSNodeRole.Arn
+
+  ClusterAutoscalerRoleArn:
+    Description: Pod Identity role used by the kube-system Cluster Autoscaler release
+    Value: !GetAtt ClusterAutoscalerPodRole.Arn

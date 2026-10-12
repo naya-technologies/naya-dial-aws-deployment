@@ -1,0 +1,52 @@
+# Changelog - naya-helm-deployment (dial-platform)
+
+## 2026.10.1
+
+**Published** 2026-10-08 to `709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-helm-deployment:2026.10.1`
+(digest `sha256:77e2709ef274e80890341911b4b64047df194427541072f472d8c5921e70648f`). The package pulled back from the registry is
+byte-identical to the one pushed, and renders (97 resources).
+
+**Images verified in the registry:** all 43 references the release needs (workloads, build tools, cluster add-ons) exist under that exact
+name and tag. Every product image carries the release tag `2026.10.1`; the variants are `naya-dial-python:2026.10.1-3.8 ... -3.12`,
+`naya-dial-mcp-proxy:2026.10.1-alpine|-debian` and `naya-dial-buildkit:2026.10.1-rootless`. Only the optional
+`naya-dial-postgres` image (database.auth: iam) is not published yet.
+
+The first chart built for `dial-install` 2.x. It contains placeholders that only `dial-install` fills, so install it with
+`dial-install` and not with `helm install` directly.
+
+### Relocatable
+- The chart declares the registry its images come from once (`installer.registry`); every image reference is concrete, which is what
+  the Marketplace validates. `dial-install` replaces that registry with `registry.source`, or with the customer's own ECR when images
+  are copied, so publishing from a different account needs no chart change.
+
+### Database sign-in with the IAM role (new, optional)
+- `installer.profiles.rdsIam`: the value set for `database.auth: iam` (DIAL Admin uses its IAM role; no password in its resources).
+  Default remains the password. The one-time role creation uses the image `naya-dial-postgres:15-alpine`, pinned in the release manifest (not in the chart).
+
+### Region independence
+- The RDS CA bundle used by the optional IAM database login (`adminRdsIam`, off by default) is now AWS's **global** bundle
+  (`files/aws-rds-global-bundle.pem`, valid for every region) instead of the us-east-1 one. Nothing else in the chart names a region;
+  the only `us-east-1` left is the host of the registry that publishes the images.
+
+### Complete image pinning
+- Repository names that did not exist in the Marketplace registry were corrected: `naya-dial-superset`,
+  `naya-dial-deployment-manager`, `naya-dial-file-processing`.
+- Build tools of the Deployment Manager (buildkit, buildkit-rootless, syft, skopeo, git, mcp-proxy) and the app builder image
+  are now registry images instead of docker.io / quay.io / ghcr.io references.
+- New section `installer.addons`: image of the Cluster Autoscaler, Istio (pilot, proxy) and Knative (7 images). Read by
+  `dial-install`, not by any template.
+- Embedded `release.yaml` (release manifest) and `placeholders.yaml` (placeholder contract) at the chart root.
+
+### Placeholders added
+`ADMIN_DB_IAM_USER`, `ADMIN_BACKEND_RDS_ROLE_ARN`, `ALB_SCHEME`, `ALB_SUBNETS`, `ALB_GROUP_NAME` (one load balancer for all hosts),
+`CORE_CONFIG_JSON`, `ANALYTICS_ENABLED`, `DEPLOYMENT_MANAGER_ENABLED`.
+
+### Settings moved into the chart (the old installer injected them)
+`global.region`, `albcontroller.enabled`, `aidial.managedSecrets.*`, `rag.updateStrategy`, `dial.bedrock.serviceAccount.name`.
+
+### Not changed
+Subchart versions (dial 5.17.0, dial-admin 0.17.0, aws-load-balancer-controller 1.14.1, dial-extension 2.1.0,
+grafana 10.5.12, influxdb2 2.1.2) and all component image tags (2026.4.1 and friends).
+
+## dial-cluster-base 1.0.0
+Namespace, gp3 storage class, App Controller permissions and the load balancer controller CRDs. Ships inside the installer.

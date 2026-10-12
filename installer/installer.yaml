@@ -1,0 +1,52 @@
+# Installer defaults: everything that does NOT change from one DIAL release to the next.
+# Per-release versions (chart, images, add-ons, Kubernetes, database engine) live in releases/<release>.yaml.
+
+helm_release:
+  name: dial
+  namespace: dial
+
+registry:
+  # Where the platform chart and every product image are published: oci://<registry host>/<repository prefix>.
+  # To publish from another AWS account, change it here (or set `registry.source` in dial.yaml); nothing else mentions an account.
+  source: oci://709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam
+
+chart:
+  # The platform chart is <registry.source>/<name>:<release id>. A release may also ship its own manifest as
+  # `release.yaml` at the root of the chart (see releases/README.md).
+  name: naya-helm-deployment
+
+# Default node groups. Customers may override any value in `sizing.node_groups`.
+node_groups:
+  core:    { instance_type: c6i.xlarge, min: 1, max: 1, desired: 1, disk_gb: 200 }
+  rag:     { instance_type: c6i.xlarge, min: 1, max: 1, desired: 1 }
+  dynamic: { instance_type: c6i.large,  min: 3, max: 3, desired: 3 }
+  system:  { instance_type: c6i.large,  min: 1, max: 1, desired: 1 }
+
+# Cilium is an alternative network plugin (kubernetes.cni: cilium). Its images are not part of the Marketplace
+# listing; they are copied from `source` into your ECR as <registry.source>/<repository>:<version>.
+cilium:
+  chart_version: 1.19.6
+  version: v1.19.6
+  pod_cidr: 100.96.0.0/18        # overlay range for pods; must not overlap the VPC or networks you connect to
+  node_cidr_mask: 24             # one /24 per node
+  images:
+    agent:    {source: quay.io/cilium/cilium,           repository: naya-dial-cilium}
+    operator: {source: quay.io/cilium/operator-generic, repository: naya-dial-cilium-operator}
+
+database:
+  min_capacity: 1
+  max_capacity: 4       # ACU; enough for a normal installation, raise it in dial.yaml if the database becomes the bottleneck
+
+# Client tools that `dial-install install-tools` can download (official URLs, SHA-256 verified).
+tools:
+  kubectl_version: v1.35.2
+  helm_version: v3.19.0
+  crane_version: v0.22.1          # copies images between registries (used by registry: ecr-mirror)
+
+# Models registered in DIAL Core. The Bedrock inference profile prefix (us / eu / apac / global)
+# is derived from the AWS region by the installer.
+models:
+  - key: anthropic.claude-sonnet-4
+    display_name: Anthropic (Claude)
+    icon: anthropic.svg
+    bedrock_model_id: anthropic.claude-sonnet-4-5-20250929-v1:0

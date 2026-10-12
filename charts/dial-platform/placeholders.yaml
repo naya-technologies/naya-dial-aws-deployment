@@ -1,0 +1,192 @@
+# Placeholder contract of the dial-platform chart.
+#
+# Every environment-specific value in values.yaml is a PLACEHOLDER_<NAME> token. The installer replaces
+# each token before `helm upgrade --install`; it refuses to continue if one has no value, or if a token
+# listed here no longer appears in values.yaml (and the reverse). `make test` enforces both directions.
+#
+# source: config        a setting in dial.yaml
+#         stack-output  an output of a CloudFormation stack created by the installer
+#         secret        a key of the customer's Secrets Manager secret
+#         derived       computed from the above
+#         runtime       read from AWS at install time
+#         constant      fixed by the installer
+
+apiVersion: dial-placeholders/v1
+placeholders:
+  ACM_CERTIFICATE_ARN:
+    source: config
+    description: ACM certificate used by every ingress.
+  ADMIN_DB_IAM_USER:
+    source: config
+    description: PostgreSQL role DIAL Admin uses when it signs in with its IAM role (database.iam_user).
+  ADMIN_BACKEND_RDS_ROLE_ARN:
+    source: stack-output
+    description: IAM role of the DIAL Admin backend that may connect to the database (database.auth iam).
+  ADMIN_DB_HOST:
+    source: stack-output
+    description: Database endpoint.
+  ADMIN_DB_NAME:
+    source: stack-output
+    description: Database name.
+  ADMIN_DB_PASSWORD:
+    source: secret
+    description: key db_master_password
+  ADMIN_DB_USER:
+    source: constant
+    description: Database login (the master user).
+  ADMIN_NEXTAUTH_SECRET:
+    source: secret
+    description: key admin_nextauth_secret
+  ADMIN_PUBLIC_HOST:
+    source: config
+    description: Host name of Admin.
+  ADMIN_PUBLIC_URL:
+    source: derived
+    description: https:// + admin host.
+  ALB_CONTROLLER_ROLE_ARN:
+    source: stack-output
+    description: IAM role of the load balancer controller.
+  ALB_GROUP_NAME:
+    source: derived
+    description: Ingress group name; all host names share one load balancer.
+  ALB_SCHEME:
+    source: config
+    description: '`internal` or `internet-facing`, from network.exposure.'
+  ALB_SECURITY_GROUP_ID:
+    source: stack-output
+    description: Security group of the load balancer (network slot).
+  ALB_SUBNETS:
+    source: stack-output
+    description: Comma separated subnet ids the load balancer is placed in.
+  ANALYTICS_ENABLED:
+    source: config
+    description: '`true` or `false`, from features.analytics.'
+  APP_CONTROLLER_ROLE_ARN:
+    source: stack-output
+    description: IAM role of the App Controller.
+  APP_DOCKER_REGISTRY:
+    source: derived
+    description: Private ECR registry of the account (<account>.dkr.ecr.<region>.amazonaws.com).
+  AWS_REGION:
+    source: config
+    description: AWS region of the installation.
+  BEDROCK_SERVICE_ROLE_ARN:
+    source: stack-output
+    description: IAM role of the Bedrock adapter.
+  CHAT_PUBLIC_HOST:
+    source: config
+    description: Host name of Chat.
+  COGNITO_CLIENT_ID:
+    source: stack-output
+    description: Cognito app client id.
+  COGNITO_CLIENT_SECRET:
+    source: runtime
+    description: Read from Cognito at install time (never stored in a stack output).
+  COGNITO_HOST:
+    source: derived
+    description: Cognito issuer URL.
+  COGNITO_HOSTED_UI_URL:
+    source: stack-output
+    description: Cognito hosted UI URL.
+  COGNITO_JWKS_URL:
+    source: derived
+    description: Cognito JWKS URL.
+  COGNITO_LOGGING_SALT:
+    source: secret
+    description: key cognito_logging_salt
+  COGNITO_USER_POOL_ID:
+    source: stack-output
+    description: Cognito user pool id.
+  CORE_ADMIN_API_KEY:
+    source: secret
+    description: key core_admin_api_key
+  CORE_CONFIG_JSON:
+    source: derived
+    description: Core configuration document (admin key and the models of the release).
+  CORE_ENCRYPTION_KEY:
+    source: secret
+    description: key core_encryption_key
+  CORE_ENCRYPTION_SECRET:
+    source: secret
+    description: key core_encryption_secret
+  CORE_SERVICE_ROLE_ARN:
+    source: stack-output
+    description: IAM role of DIAL Core.
+  DASHBOARDS_SIGNING_SECRET:
+    source: secret
+    description: key dashboards_signing_secret
+  DEPLOYMENT_MANAGER_DOCKER_REGISTRY:
+    source: derived
+    description: Private ECR registry the Deployment Manager pushes built images to.
+  DEPLOYMENT_MANAGER_ENABLED:
+    source: config
+    description: '`true` or `false`, from features.deployment_manager.'
+  DEPLOYMENT_MANAGER_ROLE_ARN:
+    source: stack-output
+    description: IAM role of the Deployment Manager.
+  DIAL_API_KEY:
+    source: secret
+    description: key dial_api_key
+  DIAL_PUBLIC_HOST:
+    source: config
+    description: Host name of the Core API.
+  DIAL_RELEASE_NAME:
+    source: constant
+    description: Helm release name of this chart (service names are <release>-<component>).
+  EKS_CLUSTER_NAME:
+    source: derived
+    description: EKS cluster name (<installation name>-cluster).
+  GRAFANA_ADMIN_PASSWORD:
+    source: secret
+    description: key grafana_admin_password
+  GRAFANA_PUBLIC_HOST:
+    source: config
+    description: Host name of Grafana.
+  INFLUXDB_PASSWORD:
+    source: secret
+    description: key influxdb_password
+  INFLUXDB_TOKEN:
+    source: secret
+    description: key influxdb_token
+  REDIS_CLUSTER_NAME:
+    source: stack-output
+    description: ElastiCache serverless cache name.
+  REDIS_ENDPOINT:
+    source: stack-output
+    description: rediss://host:port of the cache.
+  REDIS_HOSTNAME:
+    source: derived
+    description: Host part of the cache endpoint.
+  REDIS_USER_ID:
+    source: stack-output
+    description: ElastiCache IAM user id.
+  S3_BUCKET_NAME:
+    source: stack-output
+    description: DIAL storage bucket (storage slot).
+  SUPERSET_ADMIN_PASSWORD:
+    source: secret
+    description: key superset_admin_password
+  SUPERSET_CACHE_REDIS_URL:
+    source: derived
+    description: Cache endpoint with database 0.
+  SUPERSET_DASHBOARD_ARTIFACT_SIGNING_SECRET:
+    source: secret
+    description: key superset_dashboard_artifact_signing_secret
+  SUPERSET_METADATA_DATABASE_URI:
+    source: derived
+    description: SQLAlchemy URI of the Superset metadata schema (URL-escaped password).
+  SUPERSET_PUBLIC_HOST:
+    source: config
+    description: Host name of Superset.
+  SUPERSET_SECRET_KEY:
+    source: secret
+    description: key superset_secret_key
+  THEMES_PUBLIC_HOST:
+    source: config
+    description: Host name of Themes.
+  THEMES_PUBLIC_URL:
+    source: derived
+    description: https:// + themes host.
+  VPC_ID:
+    source: stack-output
+    description: VPC id (network slot).

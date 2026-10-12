@@ -1,0 +1,5 @@
+slot: cache
+providers: [default]
+description: ElastiCache Serverless (Redis) with IAM authentication.
+requires: [network, compute]
+provides: [RedisEndpoint, RedisClusterName, RedisUserId, RedisCacheArn, RedisUserArn]

@@ -1,0 +1,1309 @@
+adminRdsIam:
+  caBundle:
+    enabled: false
+    configMapName: dial-admin-rds-ca
+    key: aws-rds-bundle.crt
+    file: files/aws-rds-global-bundle.pem
+
+# Read by dial-install, not by any template: the images of the cluster add-ons that are installed next to the
+# platform. Every value is a full image reference. This is the single place that pins their versions; the chart
+# tag in the Marketplace is the release.
+installer:
+  # The registry every image reference in this chart points to by default (what the Marketplace validates).
+  # dial-install replaces it with registry.source, or with the customer's own ECR when images are copied.
+  registry: 709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam
+  # Optional value sets. `profiles.rdsIam.values` is merged into the values when dial-install runs with
+  # database.auth: iam (DIAL Admin signs in to the database with its IAM role instead of a password).
+  profiles:
+    rdsIam:
+      values:
+        adminRdsIam:
+          caBundle:
+            enabled: true
+        admin:
+          externalDatabase:
+            user: 'PLACEHOLDER_ADMIN_DB_IAM_USER'
+            password: ''
+          backend:
+            configuration:
+              datasourceAuth:
+                type: aws
+                aws:
+                  region: 'PLACEHOLDER_AWS_REGION'
+            env:
+              USE_SYSTEM_CA_CERTS: 'true'
+            serviceAccount:
+              create: true
+              name: dial-admin-backend
+              annotations:
+                eks.amazonaws.com/role-arn: 'PLACEHOLDER_ADMIN_BACKEND_RDS_ROLE_ARN'
+            extraVolumes:
+              - name: aws-rds-ca
+                configMap:
+                  name: dial-admin-rds-ca
+            extraVolumeMounts:
+              - name: aws-rds-ca
+                mountPath: /certificates/aws-rds-bundle.crt
+                subPath: aws-rds-bundle.crt
+                readOnly: true
+  addons:
+    clusterAutoscaler: 709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-dial-cluster-autoscaler:2026.10.1
+    istio:
+      pilot: 709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-dial-istio-pilot:2026.10.1
+      proxy: 709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-dial-istio-proxyv2:2026.10.1
+    knative:
+      serving-activator: 709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-dial-knative-activator:2026.10.1
+      serving-autoscaler: 709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-dial-knative-autoscaler:2026.10.1
+      serving-controller: 709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-dial-knative-controller:2026.10.1
+      serving-webhook: 709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-dial-knative-webhook:2026.10.1
+      serving-queue: 709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-dial-knative-queue-proxy:2026.10.1
+      net-istio-controller: 709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-dial-net-istio-controller:2026.10.1
+      net-istio-webhook: 709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-dial-net-istio-webhook:2026.10.1
+
+global:
+  region: 'PLACEHOLDER_AWS_REGION'
+
+albcontroller:
+  enabled: true
+  clusterName: 'PLACEHOLDER_EKS_CLUSTER_NAME'
+  region: 'PLACEHOLDER_AWS_REGION'
+  vpcId: 'PLACEHOLDER_VPC_ID'
+  # Avoid install-time race where Ingress creation can be blocked by the validating webhook
+  # before the controller's webhook service has endpoints.
+  webhookConfig:
+    disableIngressValidation: true
+  image:
+    repository: 709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-dial-alb-controllers
+    tag: '2026.10.1'
+    pullPolicy: IfNotPresent
+  serviceAccount:
+    create: true
+    name: aws-load-balancer-controller
+    annotations:
+      eks.amazonaws.com/role-arn: 'PLACEHOLDER_ALB_CONTROLLER_ROLE_ARN'
+  replicaCount: 2
+  ingressClass: alb
+  enableWaf: false
+  enableWafv2: false
+  enableShield: false
+  nodeSelector:
+    workload: core
+dial:
+  core:
+    enabled: true
+    image:
+      registry: "709825985650.dkr.ecr.us-east-1.amazonaws.com"
+      repository: naya-technologies-by-epam/naya-dial-core
+      tag: '2026.10.1'
+    serviceAccount:
+      create: true
+      name: dial-core
+      annotations:
+        eks.amazonaws.com/role-arn: 'PLACEHOLDER_CORE_SERVICE_ROLE_ARN'
+    configuration:
+      encryption:
+        secret: 'PLACEHOLDER_CORE_ENCRYPTION_SECRET'
+        key: 'PLACEHOLDER_CORE_ENCRYPTION_KEY'
+    env:
+      SPEC_STRING: "YjN4T3d6VVFKcFNicFEybzg2OUQ1OHVlT2dKVnpwcHNHWVJvc2h1ejREQT0="
+      aidial.applications.includeCustomApps: 'true'
+      aidial.applications.controllerTimeout: '600000'
+      aidial.applications.controllerEndpoint: 'http://{{ .Release.Name }}-app-controller.{{ .Release.Namespace }}.svc.cluster.local:80'
+      aidial.identityProviders.cognito.obfuscateUserEmail: "false"
+      aidial.codeInterpreter.sessionImage: 709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-dial-code-interpreter:2026.10.1
+      aidial.config.files: '["/mnt/secrets-store/aidial.config.json"]'
+      aidial.storage.provider: aws-s3
+      aidial.managedSecrets.provider: aws
+      aidial.managedSecrets.aws.region: 'PLACEHOLDER_AWS_REGION'
+      aidial.storage.bucket: 'PLACEHOLDER_S3_BUCKET_NAME'
+      aidial.storage.createBucket: 'false'
+      aidial.storage.prefix: core
+      aidial.redis.singleServerConfig.address: 'PLACEHOLDER_REDIS_ENDPOINT'
+      aidial.redis.provider.name: aws-elasti-cache
+      aidial.redis.provider.userId: 'PLACEHOLDER_REDIS_USER_ID'
+      aidial.redis.provider.region: 'PLACEHOLDER_AWS_REGION'
+      aidial.redis.provider.clusterName: 'PLACEHOLDER_REDIS_CLUSTER_NAME'
+      aidial.redis.provider.serverless: 'true'
+      aidial.identityProviders.cognito.jwksUrl: 'PLACEHOLDER_COGNITO_JWKS_URL'
+      aidial.identityProviders.cognito.rolePath: cognito:groups
+      aidial.identityProviders.cognito.issuerPattern: ^https:\/\/cognito-idp\.PLACEHOLDER_AWS_REGION\.amazonaws\.com.+$
+      aidial.identityProviders.cognito.loggingKey: sub
+    secrets:
+      aidial.identityProviders.cognito.loggingSalt: 'PLACEHOLDER_COGNITO_LOGGING_SALT'
+      aidial.config.json: 'PLACEHOLDER_CORE_CONFIG_JSON'
+        
+    # Enable Vector logger for realtime analytics
+    logger:
+      enabled: true
+      image:
+        registry: 709825985650.dkr.ecr.us-east-1.amazonaws.com
+        repository: naya-technologies-by-epam/naya-dial-realtime-analytics-vector
+        tag: '2026.10.1'
+      extraVolumeMounts:
+      - name: vector-data
+        mountPath: /var/lib/vector
+      config: |
+        sources:
+          aidial_logs:
+            type: file
+            max_line_bytes: 100000000
+            oldest_first: true
+            include:
+              - /app/log/*.log
+        sinks:
+          http_analytics_opensource:
+            inputs:
+              - aidial_logs
+            type: http
+            uri: http://PLACEHOLDER_DIAL_RELEASE_NAME-realtime-analytics.dial.svc.cluster.local:80/data
+            request:
+              timeout_secs: 300
+            batch:
+              max_bytes: 1049000
+              timeout_secs: 60
+            encoding:
+              codec: json
+
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "700Mi"
+      limits:
+        memory: "2Gi"
+    nodeSelector:
+      workload: core
+    extraVolumes:
+    - name: config
+      secret:
+        secretName: '{{ template "dialCore.names.fullname" . }}'
+        items:
+        - key: aidial.config.json
+          path: aidial.config.json
+    - name: vector-data
+      emptyDir: {}
+    extraVolumeMounts:
+    - name: config
+      mountPath: /mnt/secrets-store
+      readOnly: true
+    redis:
+      enabled: false
+    ingress:
+      enabled: true
+      ingressClassName: alb
+      annotations:
+        alb.ingress.kubernetes.io/scheme: 'PLACEHOLDER_ALB_SCHEME'
+        alb.ingress.kubernetes.io/target-type: ip
+        alb.ingress.kubernetes.io/healthcheck-path: /health
+        alb.ingress.kubernetes.io/target-group-attributes: stickiness.enabled=true,stickiness.lb_cookie.duration_seconds=86400
+        alb.ingress.kubernetes.io/load-balancer-attributes: routing.http2.enabled=true,idle_timeout.timeout_seconds=300
+        alb.ingress.kubernetes.io/listen-ports: '[{ "HTTP" : 80, "HTTPS" : 443 }]'
+        alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS-1-2-Ext-2018-06
+        alb.ingress.kubernetes.io/certificate-arn: 'PLACEHOLDER_ACM_CERTIFICATE_ARN'
+        alb.ingress.kubernetes.io/ssl-redirect: '443'
+        alb.ingress.kubernetes.io/security-groups: 'PLACEHOLDER_ALB_SECURITY_GROUP_ID'
+        alb.ingress.kubernetes.io/subnets: 'PLACEHOLDER_ALB_SUBNETS'
+        alb.ingress.kubernetes.io/group.name: 'PLACEHOLDER_ALB_GROUP_NAME'
+      hosts:
+      - 'PLACEHOLDER_DIAL_PUBLIC_HOST'
+  chat:
+    enabled: true
+    image:
+      registry: 709825985650.dkr.ecr.us-east-1.amazonaws.com
+      repository: naya-technologies-by-epam/naya-dial-ui
+      tag: '2026.10.1'
+    env:
+      BFF_PORT: '3001'
+      APP_DIAL_API_BASE: http://PLACEHOLDER_DIAL_RELEASE_NAME-core.dial.svc.cluster.local
+      APP_DIAL_ADMIN_API_BASE: http://PLACEHOLDER_DIAL_RELEASE_NAME-admin-backend.dial.svc.cluster.local/
+      APP_THEMES_HOST: 'https://PLACEHOLDER_THEMES_PUBLIC_HOST'
+      APP_COGNITO_REGION: 'PLACEHOLDER_AWS_REGION'
+      APP_COGNITO_USER_POOL_ID: 'PLACEHOLDER_COGNITO_USER_POOL_ID'
+      APP_COGNITO_CLIENT_ID: 'PLACEHOLDER_COGNITO_CLIENT_ID'
+      APP_COGNITO_DOMAIN: 'PLACEHOLDER_COGNITO_HOSTED_UI_URL'
+      APP_COGNITO_REDIRECT_URI: 'https://PLACEHOLDER_CHAT_PUBLIC_HOST/api/auth/callback/cognito'
+      APP_COGNITO_LOGOUT_URI: 'https://PLACEHOLDER_CHAT_PUBLIC_HOST'
+      APP_COGNITO_SCOPE: openid email profile
+      APP_ANALYTICS_ENABLED: 'PLACEHOLDER_ANALYTICS_ENABLED'
+      APP_SUPERSET_API_BASE: 'http://dial-superset.{{ .Release.Namespace }}.svc.cluster.local'
+      APP_SUPERSET_DOMAIN: 'https://PLACEHOLDER_SUPERSET_PUBLIC_HOST'
+      APP_SUPERSET_AUTH_PROVIDER: db
+      APP_SUPERSET_USERNAME: admin
+      APP_SUPERSET_GUEST_USERNAME: dial-guest
+      APP_SUPERSET_GUEST_FIRST_NAME: DIAL
+      APP_SUPERSET_GUEST_LAST_NAME: Guest
+      APP_SUPERSET_RLS: '[]'
+      DASHBOARDS_PUBLIC_ROOT: public/superset/dashboards/
+    secrets:
+      COGNITO_CLIENT_SECRET: 'PLACEHOLDER_COGNITO_CLIENT_SECRET'
+      APP_SUPERSET_PASSWORD: 'PLACEHOLDER_SUPERSET_ADMIN_PASSWORD'
+      DASHBOARDS_CORE_API_KEY: 'PLACEHOLDER_CORE_ADMIN_API_KEY'
+      DASHBOARDS_SIGNING_SECRET: 'PLACEHOLDER_DASHBOARDS_SIGNING_SECRET'
+      SUPERSET_DASHBOARD_ARTIFACT_SIGNING_SECRET: 'PLACEHOLDER_SUPERSET_DASHBOARD_ARTIFACT_SIGNING_SECRET'
+    nodeSelector:
+      workload: core
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "700Mi"
+      limits:
+        memory: "3Gi"
+    ingress:
+      enabled: true
+      ingressClassName: alb
+      annotations:
+        alb.ingress.kubernetes.io/scheme: 'PLACEHOLDER_ALB_SCHEME'
+        alb.ingress.kubernetes.io/target-type: ip
+        alb.ingress.kubernetes.io/healthcheck-path: /bff/health
+        alb.ingress.kubernetes.io/success-codes: '200'
+        alb.ingress.kubernetes.io/target-group-attributes: stickiness.enabled=true,stickiness.lb_cookie.duration_seconds=86400
+        alb.ingress.kubernetes.io/load-balancer-attributes: routing.http2.enabled=true,idle_timeout.timeout_seconds=300
+        alb.ingress.kubernetes.io/listen-ports: '[{ "HTTP" : 80, "HTTPS" : 443 }]'
+        alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS-1-2-Ext-2018-06
+        alb.ingress.kubernetes.io/certificate-arn: 'PLACEHOLDER_ACM_CERTIFICATE_ARN'
+        alb.ingress.kubernetes.io/ssl-redirect: '443'
+        alb.ingress.kubernetes.io/security-groups: 'PLACEHOLDER_ALB_SECURITY_GROUP_ID'
+        alb.ingress.kubernetes.io/subnets: 'PLACEHOLDER_ALB_SUBNETS'
+        alb.ingress.kubernetes.io/group.name: 'PLACEHOLDER_ALB_GROUP_NAME'
+      hosts:
+      - 'PLACEHOLDER_CHAT_PUBLIC_HOST'
+    containerPorts:
+      http: 3001
+    livenessProbe:
+      enabled: true
+      httpGet:
+        path: /bff/health
+        port: http
+      initialDelaySeconds: 30
+      periodSeconds: 10
+      timeoutSeconds: 3
+      successThreshold: 1
+      failureThreshold: 6
+    readinessProbe:
+      enabled: true
+      httpGet:
+        path: /bff/health
+        port: http
+      initialDelaySeconds: 5
+      periodSeconds: 10
+      timeoutSeconds: 3
+      successThreshold: 1
+      failureThreshold: 6
+  themes:
+    enabled: true
+    image:
+      registry: 709825985650.dkr.ecr.us-east-1.amazonaws.com
+      repository: naya-technologies-by-epam/naya-dial-themes
+      tag: '2026.10.1'
+    ingress:
+      enabled: true
+      ingressClassName: alb
+      annotations:
+        alb.ingress.kubernetes.io/scheme: 'PLACEHOLDER_ALB_SCHEME'
+        alb.ingress.kubernetes.io/target-type: ip
+        alb.ingress.kubernetes.io/healthcheck-path: /health
+        alb.ingress.kubernetes.io/target-group-attributes: stickiness.enabled=true,stickiness.lb_cookie.duration_seconds=86400
+        alb.ingress.kubernetes.io/load-balancer-attributes: routing.http2.enabled=true
+        alb.ingress.kubernetes.io/listen-ports: '[{ "HTTP" : 80, "HTTPS" : 443 }]'
+        alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS-1-2-Ext-2018-06
+        alb.ingress.kubernetes.io/certificate-arn: 'PLACEHOLDER_ACM_CERTIFICATE_ARN'
+        alb.ingress.kubernetes.io/ssl-redirect: '443'
+        alb.ingress.kubernetes.io/security-groups: 'PLACEHOLDER_ALB_SECURITY_GROUP_ID'
+        alb.ingress.kubernetes.io/subnets: 'PLACEHOLDER_ALB_SUBNETS'
+        alb.ingress.kubernetes.io/group.name: 'PLACEHOLDER_ALB_GROUP_NAME'
+      hosts:
+      - 'PLACEHOLDER_THEMES_PUBLIC_HOST'
+    resources:
+      requests:
+        cpu: "50m"
+        memory: "100Mi"
+      limits:
+        memory: "300Mi"
+    nodeSelector:
+      workload: core
+    extraVolumes:
+    - name: customer-assets
+      configMap:
+        name: '{{ .Release.Name }}-themes-customer-assets'
+        optional: true
+    extraVolumeMounts:
+    - name: customer-assets
+      mountPath: /var/www/customer-assets
+      readOnly: true
+  bedrock:
+    enabled: true
+    image:
+      registry: 709825985650.dkr.ecr.us-east-1.amazonaws.com
+      repository: naya-technologies-by-epam/naya-dial-bedrock
+      tag: '2026.10.1'
+    env:
+      DIAL_URL: http://PLACEHOLDER_DIAL_RELEASE_NAME-core.dial.svc.cluster.local
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "300Mi"
+      limits:
+        memory: "1Gi"
+    nodeSelector:
+      workload: core
+    serviceAccount:
+      create: true
+      name: dial-bedrock
+      annotations:
+        eks.amazonaws.com/role-arn: 'PLACEHOLDER_BEDROCK_SERVICE_ROLE_ARN'
+  vertexai:
+    enabled: false
+  openai:
+    enabled: false
+admin:
+  # Used by admin-backend env vars via tpl rendering (see backend.env below).
+  # post-deploy.sh should override this with the actual InfluxDB token.
+  analyticsToken: 'PLACEHOLDER_INFLUXDB_TOKEN'
+  backend:
+    enabled: true
+    image:
+      registry: 709825985650.dkr.ecr.us-east-1.amazonaws.com
+      repository: naya-technologies-by-epam/naya-dial-admin-backend
+      tag: '2026.10.1'
+    replicaCount: 1
+    containerPorts:
+      http: 8080
+      metrics: 9464
+    diagnosticMode:
+      enabled: false
+    livenessProbe:
+      enabled: true
+      httpGet:
+        path: /api/v1/health
+        port: http
+      initialDelaySeconds: 60
+      periodSeconds: 10
+      timeoutSeconds: 3
+      successThreshold: 1
+      failureThreshold: 12
+    readinessProbe:
+      enabled: true
+      httpGet:
+        path: /api/v1/health
+        port: http
+      initialDelaySeconds: 60
+      periodSeconds: 10
+      timeoutSeconds: 3
+      successThreshold: 1
+      failureThreshold: 6
+    startupProbe:
+      enabled: false
+      httpGet:
+        path: /api/v1/health
+        port: http
+      initialDelaySeconds: 10
+      periodSeconds: 10
+      timeoutSeconds: 3
+      failureThreshold: 6
+      successThreshold: 1
+    customLivenessProbe: {}
+    customReadinessProbe: {}
+    customStartupProbe: {}
+    resources:
+      requests:
+        cpu: "200m"
+        memory: "512Mi"
+      limits:
+        memory: "1Gi"
+    podSecurityContext:
+      enabled: true
+      fsGroupChangePolicy: Always
+      sysctls: []
+      supplementalGroups: []
+      fsGroup: 1001
+    containerSecurityContext:
+      enabled: true
+      seLinuxOptions: {}
+      runAsUser: 1001
+      runAsGroup: 1001
+      runAsNonRoot: true
+      privileged: false
+      readOnlyRootFilesystem: true
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+        - ALL
+      seccompProfile:
+        type: RuntimeDefault
+    command: []
+    args: []
+    automountServiceAccountToken: true
+    hostAliases: []
+    podLabels:
+      naya.ai/deployment-manager-client: "true"
+    podAnnotations: {}
+    pdb:
+      create: false
+      minAvailable: ''
+      maxUnavailable: ''
+    autoscaling:
+      hpa:
+        enabled: false
+        annotations: {}
+        behavior: {}
+        minReplicas: 1
+        maxReplicas: 3
+        targetCPU: ''
+        targetMemory: ''
+        customRules: []
+    affinity: {}
+    nodeSelector:
+      workload: core
+    tolerations: []
+    updateStrategy:
+      type: RollingUpdate
+    priorityClassName: ''
+    topologySpreadConstraints: []
+    schedulerName: ''
+    terminationGracePeriodSeconds: ''
+    lifecycleHooks: {}
+    env:
+      CORE_CONFIG_VERSION: "0.39.2"
+      CORE_CLIENT_URL: "http://{{ .Release.Name }}-core.{{ .Release.Namespace }}.svc.cluster.local"
+      PLUGINS_DEPLOYMENT_MANAGER_CLIENT_URL: "http://dial-deployment-manager.{{ .Release.Namespace }}.svc.cluster.local"
+      ENABLE_PLUGINS_DEPLOYMENT_MANAGER_ENDPOINT_REFRESH: 'PLACEHOLDER_DEPLOYMENT_MANAGER_ENABLED'
+      ENABLE_CONFIG_AUTO_IMPORT_ON_BOOTSTRAP: "true"
+      ENABLE_CONFIG_AUTO_RELOAD: "true"
+      CORE_AUTH_METHOD: "api-key"
+      METRICS_ENABLED: "true"
+      METRICS_STORAGE_HOST: "http://{{ .Release.Name }}-influxdb.{{ .Release.Namespace }}.svc.cluster.local:8086"
+      METRICS_STORAGE_ORG: "dial"
+      METRICS_STORAGE_TOKEN: "{{ .Values.analyticsToken }}"
+      METRICS_STORAGE_ANALYTICS_BUCKET: "dial-analytics"
+      METRICS_STORAGE_ANALYTICS_MEASUREMENT: "analytics"
+      METRICS_STORAGE_RATE_ANALYTICS_BUCKET: "dial-analytics"
+      METRICS_STORAGE_RATE_ANALYTICS_MEASUREMENT: "rate_analytics"
+    extraEnvVars: []
+    extraEnvVarsCM: ''
+    extraEnvVarsSecret: ''
+    secrets:
+      CORE_AUTH_API_KEY_VALUE: 'PLACEHOLDER_CORE_ADMIN_API_KEY'
+    extraVolumes: []
+    extraVolumeMounts: []
+    extraVolumeClaimTemplates: []
+    sidecars: []
+    initContainers: []
+    hostNetwork: false
+    service:
+      type: ClusterIP
+      ports:
+        http: 80
+      nodePorts:
+        http: ''
+      clusterIP: ''
+      loadBalancerIP: ''
+      loadBalancerSourceRanges: []
+      externalTrafficPolicy: Cluster
+      annotations: {}
+      extraPorts: []
+      sessionAffinity: None
+      sessionAffinityConfig: {}
+    serviceAccount:
+      create: true
+      name: ''
+      annotations: {}
+      automountServiceAccountToken: true
+    enableServiceLinks: true
+    persistence:
+      enabled: false
+      mountPath: /data
+      subPath: ''
+      storageClass: ''
+      annotations: {}
+      dataSource: {}
+      accessModes:
+      - ReadWriteOnce
+      size: 8Gi
+      existingClaim: ''
+      selector: {}
+    rbac:
+      create: true
+    networkPolicy:
+      enabled: true
+      allowExternal: true
+      allowExternalEgress: true
+      extraIngress: []
+      extraEgress: []
+      ingressNSMatchLabels: {}
+      ingressNSPodMatchLabels: {}
+    metrics:
+      enabled: false
+      service:
+        type: ClusterIP
+        ports:
+          http: 9464
+        nodePorts:
+          http: ''
+        clusterIP: ''
+        loadBalancerIP: ''
+        loadBalancerSourceRanges: []
+        externalTrafficPolicy: Cluster
+        annotations: {}
+        extraPorts: []
+        sessionAffinity: None
+        sessionAffinityConfig: {}
+      serviceMonitor:
+        enabled: false
+        namespace: ''
+        annotations: {}
+        labels: {}
+        jobLabel: ''
+        honorLabels: false
+        port: http-metrics
+        path: /metrics
+        interval: ''
+        scrapeTimeout: ''
+        metricRelabelings: []
+        relabelings: []
+        selector: {}
+      prometheusRule:
+        enabled: false
+        namespace: ''
+        labels: {}
+        rules: []
+    configuration:
+      datasourceVendor: postgresql
+      export:
+        create: true
+        type: secret
+        namespace: dial
+        names:
+        - 'PLACEHOLDER_DIAL_RELEASE_NAME-core'
+        key: aidial.config.json
+  frontend:
+    enabled: true
+    image:
+      registry: 709825985650.dkr.ecr.us-east-1.amazonaws.com
+      repository: naya-technologies-by-epam/naya-dial-admin-frontend
+      tag: '2026.10.1'
+      pullPolicy: Always
+    resources:
+      requests:
+        cpu: "200m"
+        memory: "700Mi"
+      limits:
+        memory: "2Gi"
+    nodeSelector:
+      workload: core
+    podLabels:
+      naya.ai/deployment-manager-client: "true"
+    env:
+      GRAFANA_LINK: 'https://PLACEHOLDER_GRAFANA_PUBLIC_HOST'
+      NEXTAUTH_URL: 'PLACEHOLDER_ADMIN_PUBLIC_URL'
+      DIAL_ADMIN_API_URL: http://PLACEHOLDER_DIAL_RELEASE_NAME-admin-backend.dial.svc.cluster.local/
+      THEMES_CONFIG_URL: 'PLACEHOLDER_THEMES_PUBLIC_URL'
+      ADMIN_ROLE_NAMES: admin
+      AUTH_COGNITO_CLIENT_ID: 'PLACEHOLDER_COGNITO_CLIENT_ID'
+      AUTH_COGNITO_HOST: 'PLACEHOLDER_COGNITO_HOST'
+      AUTH_COGNITO_SECRET: 'PLACEHOLDER_COGNITO_CLIENT_SECRET'
+      AUTH_COGNITO_DIAL_ROLES_FIELD: cognito:groups
+      AUTH_COGNITO_ADMIN_ROLE_NAMES: admin
+      DEPLOYMENTS_ENABLED: 'PLACEHOLDER_DEPLOYMENT_MANAGER_ENABLED'
+      MCP_REGISTRY_ENABLED: 'PLACEHOLDER_DEPLOYMENT_MANAGER_ENABLED'
+      DIAL_DEPLOYMENTS_API_URL: "http://dial-deployment-manager.{{ .Release.Namespace }}.svc.cluster.local"
+    secrets:
+      NEXTAUTH_SECRET: 'PLACEHOLDER_ADMIN_NEXTAUTH_SECRET'
+    ingress:
+      enabled: true
+      ingressClassName: alb
+      annotations:
+        alb.ingress.kubernetes.io/scheme: 'PLACEHOLDER_ALB_SCHEME'
+        alb.ingress.kubernetes.io/target-type: ip
+        alb.ingress.kubernetes.io/healthcheck-path: /health
+        alb.ingress.kubernetes.io/success-codes: '200-399'
+        alb.ingress.kubernetes.io/listen-ports: '[{ "HTTP": 80, "HTTPS": 443 }]'
+        alb.ingress.kubernetes.io/ssl-redirect: '443'
+        alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS-1-2-Ext-2018-06
+        alb.ingress.kubernetes.io/certificate-arn: 'PLACEHOLDER_ACM_CERTIFICATE_ARN'
+        alb.ingress.kubernetes.io/security-groups: 'PLACEHOLDER_ALB_SECURITY_GROUP_ID'
+        alb.ingress.kubernetes.io/subnets: 'PLACEHOLDER_ALB_SUBNETS'
+        alb.ingress.kubernetes.io/group.name: 'PLACEHOLDER_ALB_GROUP_NAME'
+      hosts:
+      - 'PLACEHOLDER_ADMIN_PUBLIC_HOST'
+  postgresql:
+    enabled: false
+  externalDatabase:
+    host: 'PLACEHOLDER_ADMIN_DB_HOST'
+    port: 5432
+    database: 'PLACEHOLDER_ADMIN_DB_NAME'
+    user: 'PLACEHOLDER_ADMIN_DB_USER'
+    password: 'PLACEHOLDER_ADMIN_DB_PASSWORD'
+
+# Analytics (InfluxDB + Realtime Analytics) - deployed in the same namespace as DIAL
+influxdb:
+  image:
+    repository: 709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-dial-influxdb
+    tag: '2026.10.1'
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "256Mi"
+    limits:
+      memory: "600Mi"
+  nodeSelector:
+    workload: core
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClass: auto-ebs-gp3
+  adminUser:
+    organization: dial
+    bucket: dial-analytics
+    user: admin
+    password: 'PLACEHOLDER_INFLUXDB_PASSWORD'
+    token: 'PLACEHOLDER_INFLUXDB_TOKEN'
+  service:
+    type: ClusterIP
+    port: 8086
+
+realtime-analytics:
+  image:
+    registry: 709825985650.dkr.ecr.us-east-1.amazonaws.com
+    repository: naya-technologies-by-epam/naya-dial-realtime-analytics
+    tag: '2026.10.1'
+    pullPolicy: IfNotPresent
+  containerPorts:
+    http: 5000
+  service:
+    type: ClusterIP
+    ports:
+      http: 80
+  nodeSelector:
+    workload: core
+  env:
+    INFLUX_URL: "http://{{ .Release.Name }}-influxdb.{{ .Release.Namespace }}.svc.cluster.local:8086"
+    INFLUX_ORG: "dial"
+    INFLUX_BUCKET: "dial-analytics"
+    INFLUX_API_TOKEN: 'PLACEHOLDER_INFLUXDB_TOKEN'
+
+rag:
+  replicaCount: 1
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  image:
+    registry: 709825985650.dkr.ecr.us-east-1.amazonaws.com
+    repository: naya-technologies-by-epam/naya-dial-rag
+    tag: '2026.10.1'
+    pullPolicy: IfNotPresent
+  containerPorts:
+    http: 5000
+  service:
+    type: ClusterIP
+    ports:
+      http: 80
+  nodeSelector:
+    workload: rag
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: rag
+      effect: NoSchedule
+  serviceAccount:
+    create: true
+  env:
+    DIAL_URL: "http://{{ .Release.Name }}-core.{{ .Release.Namespace }}.svc.cluster.local"
+    DIAL_API_KEY: 'PLACEHOLDER_DIAL_API_KEY'
+    DIAL_RAG__INDEX_STORAGE__USE_DIAL_FILE_STORAGE: "True"
+    DIAL_RAG__CONFIG_PATH: /config/aws_embedding.yaml
+    CHAT_MODEL: "anthropic.claude-sonnet-4-5-20250929-v1:0"
+    DIAL_RAG__REQUEST__QA_CHAIN__QUERY_CHAIN__LLM__DEPLOYMENT_NAME: "anthropic.claude-sonnet-4-5-20250929-v1:0"
+    DIAL_RAG__REQUEST__QA_CHAIN__CHAT_CHAIN__LLM__DEPLOYMENT_NAME: "anthropic.claude-sonnet-4-5-20250929-v1:0"
+  resources:
+    requests:
+      memory: "4Gi"
+      cpu: "1000m"
+    limits:
+      memory: "6Gi"
+      cpu: "2000m"
+
+quickapps:
+  replicaCount: 1
+  image:
+    registry: 709825985650.dkr.ecr.us-east-1.amazonaws.com
+    repository: naya-technologies-by-epam/naya-dial-quickapps-backend
+    tag: '2026.10.1'
+    pullPolicy: IfNotPresent
+  containerPorts:
+    http: 5000
+  service:
+    type: ClusterIP
+    ports:
+      http: 80
+  nodeSelector:
+    workload: core
+  serviceAccount:
+    create: true
+  env:
+    DIAL_URL: "http://{{ .Release.Name }}-core.{{ .Release.Namespace }}.svc.cluster.local"
+    REMOTE_DIAL_API_KEY: 'PLACEHOLDER_DIAL_API_KEY'
+    DIAL_API_VERSION: "2025-01-01-preview"
+    PY_INTERPRETER_CLIENT_TIMEOUT: "180"
+    PY_INTERPRETER_CLIENT_MAX_RETRIES: "7"
+    PY_INTERPRETER_ADDITIONAL_HANDLING_MODEL: "us.anthropic.claude-sonnet-4-6"
+    DEFAULT_AGENT_MAX_ITERATIONS: "20"
+    ANALYTICS_TOOLS_ENABLED: 'PLACEHOLDER_ANALYTICS_ENABLED'
+    ANALYTICS_API_BASE: "http://dial-superset.{{ .Release.Namespace }}.svc.cluster.local"
+    ANALYTICS_API_USERNAME: admin
+  secrets:
+    ANALYTICS_API_PASSWORD: PLACEHOLDER_SUPERSET_ADMIN_PASSWORD
+  resources:
+    requests:
+      cpu: "200m"
+      memory: "512Mi"
+    limits:
+      memory: "1Gi"
+
+file-processing:
+  # Opt in per product only after publishing the processor and QuickApps client.
+  enabled: false
+  replicaCount: 1
+  image:
+    registry: 709825985650.dkr.ecr.us-east-1.amazonaws.com
+    repository: naya-technologies-by-epam/naya-dial-file-processing
+    # Candidate artifact; this source declaration does not imply publication.
+    tag: '2026.10.1'
+    pullPolicy: IfNotPresent
+  containerPorts:
+    http: 5000
+  service:
+    type: ClusterIP
+    ports:
+      http: 80
+  ingress:
+    enabled: false
+  nodeSelector:
+    workload: core
+  automountServiceAccountToken: false
+  serviceAccount:
+    create: true
+  podSecurityContext:
+    enabled: true
+    fsGroup: 1001
+  containerSecurityContext:
+    enabled: true
+    runAsUser: 1001
+    runAsGroup: 1001
+    runAsNonRoot: true
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: [ALL]
+    seccompProfile:
+      type: RuntimeDefault
+  env:
+    DIAL_URL: "http://{{ .Release.Name }}-core.{{ .Release.Namespace }}.svc.cluster.local"
+    FILE_PROCESSING_PARSE_TIMEOUT: "30"
+    FILE_PROCESSING_DOWNLOAD_TIMEOUT: "30"
+    TMPDIR: /tmp
+  # The image owns its HTTP entrypoint and parser process cleanup.
+  command: []
+  args: []
+  extraVolumes:
+    - name: processing-tmp
+      emptyDir:
+        sizeLimit: 512Mi
+  extraVolumeMounts:
+    - name: processing-tmp
+      mountPath: /tmp
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+      ephemeral-storage: 128Mi
+    limits:
+      cpu: "2"
+      memory: 1Gi
+      ephemeral-storage: 512Mi
+  startupProbe:
+    enabled: true
+    initialDelaySeconds: 0
+    periodSeconds: 2
+    failureThreshold: 30
+  readinessProbe:
+    enabled: true
+    initialDelaySeconds: 0
+    periodSeconds: 5
+  livenessProbe:
+    enabled: true
+    initialDelaySeconds: 0
+    periodSeconds: 10
+  networkPolicy:
+    enabled: true
+    allowExternal: false
+    allowExternalEgress: false
+    ingressPodMatchLabels:
+      app.kubernetes.io/name: quickapps
+      app.kubernetes.io/instance: "{{ .Release.Name }}"
+    extraEgress:
+      - to:
+          - podSelector:
+              matchLabels:
+                app.kubernetes.io/name: core
+                app.kubernetes.io/instance: "{{ .Release.Name }}"
+        ports:
+          - port: 8080
+            protocol: TCP
+
+app-controller:
+  replicaCount: 1
+  image:
+    registry: 709825985650.dkr.ecr.us-east-1.amazonaws.com
+    repository: naya-technologies-by-epam/naya-dial-app-controller
+    tag: '2026.10.1'
+    pullPolicy: IfNotPresent
+  containerPorts:
+    http: 8080
+  automountServiceAccountToken: true
+  serviceAccount:
+    create: true
+    automountServiceAccountToken: true
+    annotations:
+      eks.amazonaws.com/role-arn: 'PLACEHOLDER_APP_CONTROLLER_ROLE_ARN'
+  httpRoute:
+    enabled: false
+  autoscaling:
+    enabled: false
+  env:
+    # Customer-specific registry for generated code-app images; override at runtime.
+    APP_DOCKER_REGISTRY: PLACEHOLDER_APP_DOCKER_REGISTRY
+    APP_DIAL_BASE_URL: "http://{{ .Release.Name }}-core.{{ .Release.Namespace }}.svc.cluster.local"
+    APP_BUILD_NAMESPACE: "{{ .Release.Namespace }}"
+    APP_DEPLOY_NAMESPACE: "{{ .Release.Namespace }}"
+    APP_DOCKER_REGISTRY_AUTH: ECR
+    APP_AWS_REGION: 'PLACEHOLDER_AWS_REGION'
+    APP_TEMPLATE_IMAGE: "709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-dial-app-builder-python:2026.10.1"
+    APP_BUILDER_IMAGE: "709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-dial-kaniko-executor:2026.10.1"
+    APP_DEFAULT_RUNTIME: python3.12
+    SPRING_APPLICATION_JSON: '{"app":{"runtimes":{"[python3.8]":{"image":"709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-dial-python:2026.10.1-3.8","profile":"python-pip"},"[python3.9]":{"image":"709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-dial-python:2026.10.1-3.9","profile":"python-pip"},"[python3.10]":{"image":"709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-dial-python:2026.10.1-3.10","profile":"python-pip"},"[python3.11]":{"image":"709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-dial-python:2026.10.1-3.11","profile":"python-pip"},"[python3.12]":{"image":"709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-dial-python:2026.10.1-3.12","profile":"python-pip"}}}}'
+    APP_IMAGE_NAME_FORMAT: "aidial/code-app"
+
+superset:
+  enabled: true
+  fullnameOverride: dial-superset
+  replicaCount: 1
+  image:
+    registry: 709825985650.dkr.ecr.us-east-1.amazonaws.com
+    repository: naya-technologies-by-epam/naya-dial-superset
+    tag: '2026.10.1'
+    pullPolicy: IfNotPresent
+  command:
+    - /bin/bash
+    - -c
+  args:
+    - |-
+      set -euo pipefail
+      if [ -n "${SUPERSET_METADATA_SCHEMA:-}" ]; then
+        python - <<'PY'
+      import os
+      import re
+      from sqlalchemy import create_engine, text
+      from sqlalchemy.engine import make_url
+
+      schema = os.environ["SUPERSET_METADATA_SCHEMA"]
+      if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", schema):
+          raise SystemExit("Invalid analytics metadata schema name")
+      url = make_url(os.environ["SUPERSET_METADATA_DATABASE_URI"])
+      query = dict(url.query)
+      query.pop("options", None)
+      with create_engine(url.set(query=query)).begin() as connection:
+          connection.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{schema}"'))
+      PY
+      fi
+      echo "[bootstrap] upgrading analytics metadata"
+      superset db upgrade
+      echo "[bootstrap] ensuring analytics administrator"
+      superset fab create-admin \
+        --username "$ADMIN_USERNAME" \
+        --firstname "$ADMIN_FIRSTNAME" \
+        --lastname "$ADMIN_LASTNAME" \
+        --email "$ADMIN_EMAIL" \
+        --password "$ADMIN_PASSWORD" || true
+      superset init
+      exec gunicorn \
+        --workers 4 \
+        --worker-class gthread \
+        --threads 20 \
+        --timeout 60 \
+        --keep-alive 25 \
+        --bind 0.0.0.0:8088 \
+        --limit-request-line 0 \
+        --limit-request-field_size 0 \
+        "superset.app:create_app()"
+  containerPorts:
+    http: 8088
+  env:
+    ADMIN_EMAIL: admin@example.com
+    ADMIN_FIRSTNAME: Analytics
+    ADMIN_LASTNAME: Admin
+    ADMIN_USERNAME: admin
+    ENABLE_PROXY_FIX: "true"
+    PYTHONPATH: /app/pythonpath
+    SUPERSET_ANALYTICS_API_ENABLED: "1"
+    SUPERSET_LOAD_EXAMPLES: "no"
+    TALISMAN_ENABLED: "false"
+  secrets:
+    ADMIN_PASSWORD: PLACEHOLDER_SUPERSET_ADMIN_PASSWORD
+    SUPERSET_SECRET_KEY: PLACEHOLDER_SUPERSET_SECRET_KEY
+    SUPERSET_DASHBOARD_ARTIFACT_SIGNING_SECRET: PLACEHOLDER_SUPERSET_DASHBOARD_ARTIFACT_SIGNING_SECRET
+    SUPERSET_METADATA_DATABASE_URI: PLACEHOLDER_SUPERSET_METADATA_DATABASE_URI
+    SUPERSET_METADATA_SCHEMA: superset
+    SUPERSET_CACHE_REDIS_URL: PLACEHOLDER_SUPERSET_CACHE_REDIS_URL
+    SUPERSET_CACHE_REDIS_CLUSTER_MODE: "true"
+  publicBaseUrl: https://PLACEHOLDER_SUPERSET_PUBLIC_HOST
+  embedAllowedDomains: https://PLACEHOLDER_CHAT_PUBLIC_HOST
+  extraVolumeMounts:
+    - name: superset-home
+      mountPath: /app/superset_home
+  extraVolumes:
+    - name: superset-home
+      emptyDir: {}
+  service:
+    type: ClusterIP
+    ports:
+      http: 80
+  ingress:
+    enabled: true
+    ingressClassName: alb
+    hosts:
+      - PLACEHOLDER_SUPERSET_PUBLIC_HOST
+    path: /
+    pathType: Prefix
+    annotations:
+      alb.ingress.kubernetes.io/scheme: 'PLACEHOLDER_ALB_SCHEME'
+      alb.ingress.kubernetes.io/target-type: ip
+      alb.ingress.kubernetes.io/healthcheck-path: /health
+      alb.ingress.kubernetes.io/success-codes: "200"
+      alb.ingress.kubernetes.io/target-group-attributes: stickiness.enabled=true,stickiness.lb_cookie.duration_seconds=86400
+      alb.ingress.kubernetes.io/load-balancer-attributes: routing.http2.enabled=true,idle_timeout.timeout_seconds=300
+      alb.ingress.kubernetes.io/listen-ports: '[{ "HTTP" : 80, "HTTPS" : 443 }]'
+      alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS-1-2-Ext-2018-06
+      alb.ingress.kubernetes.io/certificate-arn: PLACEHOLDER_ACM_CERTIFICATE_ARN
+      alb.ingress.kubernetes.io/ssl-redirect: "443"
+      alb.ingress.kubernetes.io/security-groups: PLACEHOLDER_ALB_SECURITY_GROUP_ID
+      alb.ingress.kubernetes.io/subnets: 'PLACEHOLDER_ALB_SUBNETS'
+      alb.ingress.kubernetes.io/group.name: 'PLACEHOLDER_ALB_GROUP_NAME'
+  livenessProbe:
+    enabled: true
+    httpGet:
+      path: /health
+      port: http
+    periodSeconds: 30
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readinessProbe:
+    enabled: true
+    httpGet:
+      path: /health
+      port: http
+    periodSeconds: 15
+    timeoutSeconds: 5
+    failureThreshold: 3
+  startupProbe:
+    enabled: true
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 30
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+  podSecurityContext:
+    enabled: true
+    fsGroup: 1000
+    fsGroupChangePolicy: Always
+  containerSecurityContext:
+    enabled: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    runAsNonRoot: true
+    readOnlyRootFilesystem: false
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    seccompProfile:
+      type: RuntimeDefault
+  nodeSelector:
+    workload: dynamic
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: dynamic
+      effect: NoSchedule
+  networkPolicy:
+    enabled: true
+    allowExternal: true
+    allowExternalEgress: true
+  serviceAccount:
+    create: true
+    automountServiceAccountToken: false
+
+deployment-manager:
+  enabled: true
+  fullnameOverride: dial-deployment-manager
+  replicaCount: 1
+  image:
+    registry: 709825985650.dkr.ecr.us-east-1.amazonaws.com
+    repository: naya-technologies-by-epam/naya-dial-deployment-manager
+    tag: '2026.10.1'
+    pullPolicy: IfNotPresent
+  containerPorts:
+    http: 8080
+    metrics: 9464
+  metrics:
+    enabled: true
+  customLivenessProbe:
+    httpGet:
+      path: /api/v1/health
+      port: http
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 6
+  customReadinessProbe:
+    httpGet:
+      path: /api/v1/health
+      port: http
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 6
+  customStartupProbe:
+    httpGet:
+      path: /api/v1/health
+      port: http
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 30
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      memory: 1Gi
+  nodeSelector:
+    workload: core
+  automountServiceAccountToken: true
+  serviceAccount:
+    create: true
+    name: dial-deployment-manager
+    automountServiceAccountToken: true
+    annotations:
+      eks.amazonaws.com/role-arn: PLACEHOLDER_DEPLOYMENT_MANAGER_ROLE_ARN
+  env:
+    AWS_REGION: PLACEHOLDER_AWS_REGION
+    ECR_REGION: PLACEHOLDER_AWS_REGION
+    ECR_REPOSITORY: aidial/deployment-manager
+    DOCKER_REGISTRY: PLACEHOLDER_DEPLOYMENT_MANAGER_DOCKER_REGISTRY
+    DOCKER_REGISTRY_PROTOCOL: https
+    DOCKER_REGISTRY_AUTH: ECR
+    IMAGE_NAME_FORMAT: deployment-%s
+    AUTO_PULL_SECRET_ENABLED: "false"
+    K8S_CONNECT_TYPE: IN_CLUSTER
+    K8S_BUILD_NAMESPACE: "{{ .Release.Namespace }}"
+    K8S_KNATIVE_ENABLED: "true"
+    K8S_KNATIVE_DEPLOYMENT_NAMESPACE: "{{ .Release.Namespace }}"
+    K8S_NIM_ENABLED: "false"
+    K8S_KSERVE_ENABLED: "false"
+    GIT_CLONE_IMAGE: 709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-dial-git:2026.10.1
+    MCP_PROXY_EXECUTABLE_IMAGE_ALPINE: 709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-dial-mcp-proxy:2026.10.1-alpine
+    MCP_PROXY_EXECUTABLE_IMAGE_DEBIAN: 709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-dial-mcp-proxy:2026.10.1-debian
+    NODE_POOL_DEFAULT: dynamic
+    NODE_POOLS: |-
+      - id: dynamic
+        name: Dynamic workloads
+        description: DIAL dynamic worker node group
+        nodeSelector:
+          workload: dynamic
+        tolerations:
+          - key: dedicated
+            operator: Equal
+            value: dynamic
+            effect: NoSchedule
+    CONFIG_REST_SECURITY_MODE: oidc
+    SECURITY_REQUIRE_EMAIL: "false"
+    DATASOURCE_VENDOR: POSTGRES
+    DATASOURCE_AUTH_TYPE: basic
+    POSTGRES_HOST: PLACEHOLDER_ADMIN_DB_HOST
+    POSTGRES_PORT: "5432"
+    POSTGRES_DATABASE: PLACEHOLDER_ADMIN_DB_NAME
+    POSTGRES_OPS: currentSchema=deployment_manager
+    POSTGRES_DATASOURCE_USERNAME: PLACEHOLDER_ADMIN_DB_USER
+    SPRING_FLYWAY_DEFAULT_SCHEMA: deployment_manager
+    SPRING_FLYWAY_SCHEMAS: deployment_manager
+    SPRING_FLYWAY_CREATE_SCHEMAS: "true"
+    SPRING_APPLICATION_JSON: >-
+      {"providers":{"cognito":{"issuer":"PLACEHOLDER_COGNITO_HOST","jwkSetUri":"PLACEHOLDER_COGNITO_JWKS_URL","principalClaim":"sub","audiences":["PLACEHOLDER_COGNITO_CLIENT_ID"],"roleClaims":["cognito:groups"],"emailClaims":["email"],"rolesMapping":"{\"admin\":[\"FULL_ADMIN\"],\"ConfigAdmin\":[\"FULL_ADMIN\"]}"}},"app":{"builder-root-image":"709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-dial-buildkit:2026.10.1","builder-rootless-image":"709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-dial-buildkit:2026.10.1-rootless","analyser-image":"709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-dial-syft:2026.10.1","copy-image":"709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-dial-skopeo:2026.10.1","builder-job-config":{"spec":{"template":{"spec":{"nodeSelector":{"workload":"dynamic"},"tolerations":[{"key":"dedicated","operator":"Equal","value":"dynamic","effect":"NoSchedule"}]}}}},"analyzer-job-config":{"spec":{"template":{"spec":{"nodeSelector":{"workload":"dynamic"},"tolerations":[{"key":"dedicated","operator":"Equal","value":"dynamic","effect":"NoSchedule"}]}}}},"copy-image-job-config":{"spec":{"template":{"spec":{"nodeSelector":{"workload":"dynamic"},"tolerations":[{"key":"dedicated","operator":"Equal","value":"dynamic","effect":"NoSchedule"}]}}}}}}
+  secrets:
+    POSTGRES_DATASOURCE_PASSWORD: PLACEHOLDER_ADMIN_DB_PASSWORD
+  networkPolicy:
+    enabled: true
+    allowExternal: false
+    allowExternalEgress: true
+    metrics:
+      allowExternal: true
+    extraIngress:
+      - ports:
+          - port: 8080
+        from:
+          - podSelector:
+              matchLabels:
+                naya.ai/deployment-manager-client: "true"
+  extraDeploy:
+    - apiVersion: rbac.authorization.k8s.io/v1
+      kind: Role
+      metadata:
+        name: dial-deployment-manager
+        namespace: "{{ .Release.Namespace }}"
+      rules:
+        - apiGroups: [batch]
+          resources: [jobs]
+          verbs: [get, list, watch, create, delete]
+        - apiGroups: [""]
+          resources: [pods, pods/log, events]
+          verbs: [get, list, watch, delete]
+        - apiGroups: [""]
+          resources: [secrets, configmaps]
+          verbs: [get, list, watch, create, update, patch, delete]
+        - apiGroups: [serving.knative.dev]
+          resources: [services]
+          verbs: [get, list, watch, create, update, patch, delete]
+    - apiVersion: rbac.authorization.k8s.io/v1
+      kind: RoleBinding
+      metadata:
+        name: dial-deployment-manager
+        namespace: "{{ .Release.Namespace }}"
+      subjects:
+        - kind: ServiceAccount
+          name: dial-deployment-manager
+          namespace: "{{ .Release.Namespace }}"
+      roleRef:
+        apiGroup: rbac.authorization.k8s.io
+        kind: Role
+        name: dial-deployment-manager
+
+lic-ins:
+  image:
+    registry: 709825985650.dkr.ecr.us-east-1.amazonaws.com
+    repository: naya-technologies-by-epam/naya-dial-lic-ins
+    tag: '2026.10.1'
+    pullPolicy: IfNotPresent
+  nodeSelector:
+    workload: core
+  env:
+    REDIS_HOST: 'PLACEHOLDER_REDIS_HOSTNAME'
+
+# Grafana (Analytics dashboards) - deployed in the same namespace as DIAL
+grafana:
+  fullnameOverride: grafana
+
+  # Used by Grafana datasource provisioning via tpl rendering (see datasources.yaml below).
+  # post-deploy.sh should override this with the actual InfluxDB token.
+  analyticsToken: 'PLACEHOLDER_INFLUXDB_TOKEN'
+
+  image:
+    registry: 709825985650.dkr.ecr.us-east-1.amazonaws.com
+    repository: naya-technologies-by-epam/naya-dial-grafana
+    tag: '2026.10.1'
+  initChownData:
+    enabled: true
+    image:
+      registry: 709825985650.dkr.ecr.us-east-1.amazonaws.com
+      repository: naya-technologies-by-epam/naya-dial-busybox
+      tag: '2026.10.1'
+  testFramework:
+    enabled: false
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      memory: "1Gi"
+  nodeSelector:
+    workload: core
+
+  replicas: 1
+
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClassName: auto-ebs-gp3
+
+  adminUser: admin
+  adminPassword: 'PLACEHOLDER_GRAFANA_ADMIN_PASSWORD'
+
+  service:
+    type: ClusterIP
+    port: 80
+
+  ingress:
+    enabled: true
+    ingressClassName: alb
+    annotations:
+      alb.ingress.kubernetes.io/scheme: 'PLACEHOLDER_ALB_SCHEME'
+      alb.ingress.kubernetes.io/target-type: ip
+      alb.ingress.kubernetes.io/healthcheck-path: /api/health
+      alb.ingress.kubernetes.io/success-codes: '200'
+      alb.ingress.kubernetes.io/listen-ports: '[{ "HTTP" : 80, "HTTPS" : 443 }]'
+      alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS-1-2-Ext-2018-06
+      alb.ingress.kubernetes.io/certificate-arn: 'PLACEHOLDER_ACM_CERTIFICATE_ARN'
+      alb.ingress.kubernetes.io/ssl-redirect: '443'
+      alb.ingress.kubernetes.io/security-groups: 'PLACEHOLDER_ALB_SECURITY_GROUP_ID'
+      alb.ingress.kubernetes.io/subnets: 'PLACEHOLDER_ALB_SUBNETS'
+      alb.ingress.kubernetes.io/group.name: 'PLACEHOLDER_ALB_GROUP_NAME'
+    hosts:
+      - 'PLACEHOLDER_GRAFANA_PUBLIC_HOST'
+
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+        - name: InfluxDB
+          type: influxdb
+          access: proxy
+          url: "http://{{ .Release.Name }}-influxdb.{{ .Release.Namespace }}.svc.cluster.local:8086"
+          isDefault: true
+          jsonData:
+            organization: dial
+            defaultBucket: dial-analytics
+            version: Flux
+          secureJsonData:
+            token: '{{ .Values.analyticsToken }}'
+
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+        - name: dial
+          orgId: 1
+          folder: Dial
+          type: file
+          disableDeletion: true
+          editable: false
+          options:
+            path: /var/lib/grafana/dashboards/dial
+
+  # Dashboard JSON is packaged in the umbrella chart as ConfigMap `grafana-dashboards-dial`
+  # from `dashboards/dial_analytics.json` (no external URL dependency).
+  dashboardsConfigMaps:
+    dial: grafana-dashboards-dial
+
+  # Optional: if you add dashboards that use non-built-in panel plugins,
+  # declare them here so Grafana installs them at startup.
+  # plugins:
+  #   - ae3e-plotly-panel
+  #   - magnesium-wordcloud-panel

@@ -1,0 +1,5 @@
+slot: cni
+providers: [cilium]
+description: Cilium overlay network (VXLAN) instead of the VPC CNI. Installed between the control plane and the nodes; load balancers target nodes and webhooks use host networking.
+requires: [compute]
+provides: []

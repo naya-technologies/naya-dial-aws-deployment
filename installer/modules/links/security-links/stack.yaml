@@ -1,0 +1,39 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'DIAL security group rules that need both the network and the EKS cluster (the cluster security group only exists after EKS is created).'
+
+Parameters:
+  ALBSecurityGroupId:
+    Type: String
+  VPCESecurityGroupId:
+    Type: String
+  ClusterSecurityGroupId:
+    Type: String
+    Description: Security group EKS attaches to the worker nodes
+
+Resources:
+  # Load balancer <-> worker nodes. Without these the target groups time out.
+  ClusterIngressFromALB:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref ClusterSecurityGroupId
+      IpProtocol: tcp
+      FromPort: 0
+      ToPort: 65535
+      SourceSecurityGroupId: !Ref ALBSecurityGroupId
+
+  ALBEgressToCluster:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref ALBSecurityGroupId
+      IpProtocol: -1
+      DestinationSecurityGroupId: !Ref ClusterSecurityGroupId
+
+  # Worker nodes -> interface VPC endpoints (Bedrock, Secrets Manager, ...).
+  EndpointIngressFromCluster:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref VPCESecurityGroupId
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      SourceSecurityGroupId: !Ref ClusterSecurityGroupId

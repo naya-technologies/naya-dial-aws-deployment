@@ -1,0 +1,5 @@
+slot: compute
+providers: [default]
+description: EKS cluster, four managed node groups, add-ons and the OIDC provider.
+requires: [network, endpoints]
+provides: [ClusterName, ClusterArn, ClusterEndpoint, OIDCProviderArn, OIDCProviderUrl, ClusterSecurityGroupId, NodeRoleArn, ClusterAutoscalerRoleArn]

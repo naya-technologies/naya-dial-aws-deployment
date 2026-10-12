@@ -1,0 +1,5 @@
+slot: endpoints
+providers: [create]
+description: VPC endpoints for the AWS services DIAL uses (needed when private subnets have no route to the internet).
+requires: [network]
+provides: []

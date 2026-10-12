@@ -1,0 +1,19 @@
+# dial-cluster-base values. Environment-specific values are PLACEHOLDER_<NAME> tokens
+# (see placeholders.yaml); `dial-install` replaces them before installing.
+
+# Namespace that holds the DIAL release. Created here so that RBAC can be bound before Helm creates the service accounts.
+namespace: 'PLACEHOLDER_NAMESPACE'
+
+storageClass:
+  name: auto-ebs-gp3
+  # "true" makes this the default storage class (the installer sets it only when the cluster has none).
+  makeDefault: 'PLACEHOLDER_STORAGE_CLASS_IS_DEFAULT'
+
+appController:
+  # ServiceAccount created by the dial-platform chart for the App Controller.
+  serviceAccountName: dial-app-controller
+
+# AWS Load Balancer Controller CRDs. Installed as regular templates (not crds/) so that
+# `helm upgrade` keeps them current; they are never removed with the release (resource-policy keep).
+loadBalancerCrds:
+  enabled: true

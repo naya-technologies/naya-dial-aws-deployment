@@ -1,0 +1,5 @@
+slot: identity
+providers: [cognito, cognito-saml]
+description: Cognito user pool with a hosted UI and one app client. With cognito-saml, a SAML identity provider is federated into it.
+requires: []
+provides: [UserPoolId, ClientId, CognitoIssuerUrl, CognitoJWKSUrl, CognitoHostedUIUrl, AdminClientId]

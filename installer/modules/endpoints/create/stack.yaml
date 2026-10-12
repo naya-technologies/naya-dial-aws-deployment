@@ -1,0 +1,148 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'DIAL VPC endpoints: lets EKS nodes and pods reach AWS services without an internet route.'
+
+Parameters:
+  VPCId:
+    Type: String
+  PrivateSubnet1Id:
+    Type: String
+  PrivateSubnet2Id:
+    Type: String
+  PrivateRouteTableId:
+    Type: String
+    Description: Route table that gets the S3 gateway endpoint
+  EndpointSecurityGroupId:
+    Type: String
+    Description: Security group that allows HTTPS from the cluster to the interface endpoints
+
+Resources:
+  # Needed by EKS nodes and the load balancer controller.
+  EC2Endpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPCId
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.ec2'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref PrivateSubnet1Id, !Ref PrivateSubnet2Id]
+      SecurityGroupIds: [!Ref EndpointSecurityGroupId]
+
+  ECRApiEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPCId
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.ecr.api'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref PrivateSubnet1Id, !Ref PrivateSubnet2Id]
+      SecurityGroupIds: [!Ref EndpointSecurityGroupId]
+
+  ECRDkrEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPCId
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.ecr.dkr'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref PrivateSubnet1Id, !Ref PrivateSubnet2Id]
+      SecurityGroupIds: [!Ref EndpointSecurityGroupId]
+
+  S3Endpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPCId
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.s3'
+      VpcEndpointType: Gateway
+      RouteTableIds: [!Ref PrivateRouteTableId]
+
+  STSEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPCId
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.sts'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref PrivateSubnet1Id, !Ref PrivateSubnet2Id]
+      SecurityGroupIds: [!Ref EndpointSecurityGroupId]
+
+  EKSEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPCId
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.eks'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref PrivateSubnet1Id, !Ref PrivateSubnet2Id]
+      SecurityGroupIds: [!Ref EndpointSecurityGroupId]
+
+  ELBEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPCId
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.elasticloadbalancing'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref PrivateSubnet1Id, !Ref PrivateSubnet2Id]
+      SecurityGroupIds: [!Ref EndpointSecurityGroupId]
+
+  # Cognito's endpoint is not offered in every Availability Zone; one subnet is enough.
+  CognitoIdpEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPCId
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.cognito-idp'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref PrivateSubnet2Id]
+      SecurityGroupIds: [!Ref EndpointSecurityGroupId]
+
+  # Needed by the DIAL workloads at runtime.
+  LogsEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPCId
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.logs'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref PrivateSubnet1Id, !Ref PrivateSubnet2Id]
+      SecurityGroupIds: [!Ref EndpointSecurityGroupId]
+
+  BedrockEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPCId
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.bedrock'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref PrivateSubnet1Id, !Ref PrivateSubnet2Id]
+      SecurityGroupIds: [!Ref EndpointSecurityGroupId]
+
+  BedrockRuntimeEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPCId
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.bedrock-runtime'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref PrivateSubnet1Id, !Ref PrivateSubnet2Id]
+      SecurityGroupIds: [!Ref EndpointSecurityGroupId]
+
+  SecretsManagerEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPCId
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.secretsmanager'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref PrivateSubnet1Id, !Ref PrivateSubnet2Id]
+      SecurityGroupIds: [!Ref EndpointSecurityGroupId]
+
+  KMSEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPCId
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.kms'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref PrivateSubnet1Id, !Ref PrivateSubnet2Id]
+      SecurityGroupIds: [!Ref EndpointSecurityGroupId]

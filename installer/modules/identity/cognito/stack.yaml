@@ -1,0 +1,236 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'DIAL Cognito User Pool - public Hosted UI with a shared secret app client'
+
+Parameters:
+  UserPoolName:
+    Type: String
+    Default: dial-users
+    Description: Name for the shared DIAL user pool
+
+  ChatHost:
+    Type: String
+    Description: Chat host name (callback URL)
+
+  AdminHost:
+    Type: String
+    Description: Admin host name (callback URL)
+
+  DisableSelfRegistration:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+
+  HostedUIDomainPrefix:
+    Type: String
+    Default: ''
+    Description: Optional Cognito Hosted UI domain prefix. Defaults to dial-users-<account id>.
+
+  SAMLProviderName:
+    Type: String
+    Default: ''
+    Description: Optional SAML identity provider name.
+
+  SAMLMetadataURL:
+    Type: String
+    Default: ''
+    Description: Optional SAML identity provider metadata URL.
+
+  SAMLIdpSignout:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: Whether Cognito should send SAML logout requests to the IdP.
+
+  ChatAppClientName:
+    Type: String
+    Default: ''
+    Description: Optional chat app client name.
+
+Conditions:
+  SelfRegistrationDisabled: !Equals [!Ref DisableSelfRegistration, 'true']
+  HasCustomHostedUIDomainPrefix: !Not [!Equals [!Ref HostedUIDomainPrefix, '']]
+  HasSAMLProviderName: !Not [!Equals [!Ref SAMLProviderName, '']]
+  HasSAMLMetadataURL: !Not [!Equals [!Ref SAMLMetadataURL, '']]
+  SAMLProviderEnabled: !And [!Condition HasSAMLProviderName, !Condition HasSAMLMetadataURL]
+  HasChatAppClientName: !Not [!Equals [!Ref ChatAppClientName, '']]
+
+Resources:
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Ref UserPoolName
+      UsernameConfiguration:
+        CaseSensitive: false
+      UsernameAttributes:
+        - email
+      AutoVerifiedAttributes:
+        - email
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: !If [SelfRegistrationDisabled, true, false]
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Required: true
+          Mutable: true
+        - Name: name
+          AttributeDataType: String
+          Required: true
+          Mutable: true
+        - !If
+          - SAMLProviderEnabled
+          - Name: groups
+            AttributeDataType: String
+            Required: false
+            Mutable: true
+          - !Ref AWS::NoValue
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+      UserAttributeUpdateSettings:
+        AttributesRequireVerificationBeforeUpdate:
+          - email
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: verified_email
+            Priority: 1
+      UserPoolTags:
+        Name: !Sub '${UserPoolName}-chat'
+        Type: 'EndUsers'
+
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    DependsOn: UserPool
+    Properties:
+      Domain: !If
+        - HasCustomHostedUIDomainPrefix
+        - !Ref HostedUIDomainPrefix
+        - !Sub 'dial-users-${AWS::AccountId}'
+      UserPoolId: !Ref UserPool
+
+  SAMLIdentityProvider:
+    Type: AWS::Cognito::UserPoolIdentityProvider
+    Condition: SAMLProviderEnabled
+    Properties:
+      ProviderName: !Ref SAMLProviderName
+      ProviderType: SAML
+      UserPoolId: !Ref UserPool
+      ProviderDetails:
+        MetadataURL: !Ref SAMLMetadataURL
+        IDPSignout: !Ref SAMLIdpSignout
+      AttributeMapping:
+        email: Email
+        name: FullName
+        custom:groups: GroupName
+
+  ChatAppClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !If
+        - HasChatAppClientName
+        - !Ref ChatAppClientName
+        - !Sub '${UserPoolName}-chat-client'
+      UserPoolId: !Ref UserPool
+      GenerateSecret: true
+      ExplicitAuthFlows:
+        - ALLOW_CUSTOM_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_USER_SRP_AUTH
+      AllowedOAuthFlows:
+        - code
+      AllowedOAuthScopes:
+        - email
+        - openid
+        - profile
+      AllowedOAuthFlowsUserPoolClient: true
+      CallbackURLs:
+        - !Sub 'https://${ChatHost}'
+        - !Sub 'https://${ChatHost}/api/auth/callback/cognito'
+        - !Sub 'https://${AdminHost}'
+        - !Sub 'https://${AdminHost}/api/auth/callback/cognito'
+      LogoutURLs:
+        - !Sub 'https://${ChatHost}'
+        - !Sub 'https://${AdminHost}'
+      SupportedIdentityProviders:
+        - COGNITO
+        - !If [SAMLProviderEnabled, !Ref SAMLIdentityProvider, !Ref AWS::NoValue]
+      PreventUserExistenceErrors: ENABLED
+      EnableTokenRevocation: true
+      RefreshTokenValidity: 5
+      AccessTokenValidity: 60
+      IdTokenValidity: 60
+      TokenValidityUnits:
+        RefreshToken: days
+        AccessToken: minutes
+        IdToken: minutes
+
+Outputs:
+  UserPoolId:
+    Description: Cognito User Pool ID (Chat Users)
+    Value: !Ref UserPool
+    Export:
+      Name: !Sub '${AWS::StackName}-UserPoolId'
+
+  UserPoolArn:
+    Description: Cognito User Pool ARN
+    Value: !GetAtt UserPool.Arn
+
+  ClientId:
+    Description: Cognito App Client ID (Chat)
+    Value: !Ref ChatAppClient
+    Export:
+      Name: !Sub '${AWS::StackName}-ClientId'
+
+
+  CognitoIssuerUrl:
+    Description: Cognito issuer URL (Chat)
+    Value: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}'
+    Export:
+      Name: !Sub '${AWS::StackName}-IssuerUrl'
+
+  CognitoJWKSUrl:
+    Description: Cognito JWKS URL (Chat)
+    Value: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}/.well-known/jwks.json'
+    Export:
+      Name: !Sub '${AWS::StackName}-JWKSUrl'
+
+  CognitoHostedUIUrl:
+    Description: Cognito Hosted UI URL (Chat)
+    Value: !Sub 'https://${UserPoolDomain}.auth.${AWS::Region}.amazoncognito.com'
+
+  AdminUserPoolId:
+    Description: Cognito User Pool ID (Admin) - same as UserPoolId
+    Value: !Ref UserPool
+    Export:
+      Name: !Sub '${AWS::StackName}-AdminUserPoolId'
+
+  AdminUserPoolArn:
+    Description: Cognito User Pool ARN (Admin) - same as UserPoolArn
+    Value: !GetAtt UserPool.Arn
+
+  AdminClientId:
+    Description: Cognito App Client ID (Admin) - same shared client as chat
+    Value: !Ref ChatAppClient
+    Export:
+      Name: !Sub '${AWS::StackName}-AdminClientId'
+
+
+  AdminCognitoIssuerUrl:
+    Description: Cognito issuer URL (Admin)
+    Value: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}'
+    Export:
+      Name: !Sub '${AWS::StackName}-AdminIssuerUrl'
+
+  AdminCognitoJWKSUrl:
+    Description: Cognito JWKS URL (Admin)
+    Value: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}/.well-known/jwks.json'
+    Export:
+      Name: !Sub '${AWS::StackName}-AdminJWKSUrl'
+
+  AdminCognitoHostedUIUrl:
+    Description: Cognito Hosted UI URL (Admin)
+    Value: !Sub 'https://${UserPoolDomain}.auth.${AWS::Region}.amazoncognito.com'

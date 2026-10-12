@@ -1,0 +1,86 @@
+apiVersion: v2
+name: naya-helm-deployment
+description: Umbrella chart for DIAL + DIAL Admin
+type: application
+version: 2026.10.1
+appVersion: 1.0.0
+
+dependencies:
+  - name: dial
+    alias: dial
+    version: 5.17.0
+    repository: https://d2w6p7i2gnitgl.cloudfront.net/helm
+    condition: dial.enabled
+
+  - name: dial-admin
+    alias: admin
+    version: 0.17.0
+    repository: https://d2w6p7i2gnitgl.cloudfront.net/helm
+    condition: admin.enabled
+
+  - name: aws-load-balancer-controller
+    alias: albcontroller
+    version: 1.14.1
+    repository: https://d2w6p7i2gnitgl.cloudfront.net/helm
+    condition: albcontroller.enabled
+
+  - name: dial-extension
+    alias: realtime-analytics
+    version: 2.1.0
+    repository: https://d2w6p7i2gnitgl.cloudfront.net/helm
+    condition: realtime-analytics.enabled
+
+  - name: dial-extension
+    alias: rag
+    version: 2.1.0
+    repository: https://d2w6p7i2gnitgl.cloudfront.net/helm
+    condition: rag.enabled
+
+  - name: dial-extension
+    alias: quickapps
+    version: 2.1.0
+    repository: https://d2w6p7i2gnitgl.cloudfront.net/helm
+    condition: quickapps.enabled
+
+  - name: dial-extension
+    alias: file-processing
+    version: 2.1.0
+    repository: https://d2w6p7i2gnitgl.cloudfront.net/helm
+    condition: file-processing.enabled
+
+  - name: dial-extension
+    alias: app-controller
+    version: 2.1.0
+    repository: https://d2w6p7i2gnitgl.cloudfront.net/helm
+    condition: app-controller.enabled
+
+  - name: dial-extension
+    alias: superset
+    version: 2.1.0
+    repository: https://d2w6p7i2gnitgl.cloudfront.net/helm
+    condition: superset.enabled
+
+  # Keep Deployment Manager on the same dial-extension chart as Superset.
+  - name: dial-extension
+    alias: deployment-manager
+    version: 2.1.0
+    repository: https://d2w6p7i2gnitgl.cloudfront.net/helm
+    condition: deployment-manager.enabled
+
+  - name: dial-extension
+    alias: lic-ins
+    version: 2.1.0
+    repository: https://d2w6p7i2gnitgl.cloudfront.net/helm
+    condition: lic-ins.enabled
+
+  - name: influxdb2
+    alias: influxdb
+    version: 2.1.2
+    repository: https://d2w6p7i2gnitgl.cloudfront.net/helm
+    condition: influxdb.enabled
+
+  - name: grafana
+    alias: grafana
+    version: 10.5.12
+    repository: https://d2w6p7i2gnitgl.cloudfront.net/helm
+    condition: grafana.enabled

@@ -1,0 +1,5 @@
+slot: registry
+providers: [ecr-mirror]
+description: Copies the product images from the AWS Marketplace registry into your private ECR; the cluster pulls from there.
+requires: []
+provides: []
