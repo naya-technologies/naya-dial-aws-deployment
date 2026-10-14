@@ -427,7 +427,7 @@ if __name__ == "__main__":
 class MarketplaceListTests(Base):
     """The Marketplace requires every image the chart refers to in its delivery option, including components that are off by default."""
 
-    LIST = ROOT / "releases" / "2026.10.1-marketplace-uris.txt"
+    LIST = ROOT / "releases" / "2026.10.2-marketplace-uris.txt"
 
     def static_images(self):
         host = CHART_VALUES["installer"]["registry"].split("/")[0]
@@ -462,7 +462,7 @@ class MarketplaceListTests(Base):
 
     def test_the_list_holds_the_chart_and_nothing_that_is_unused(self):
         listed = self.listed()
-        self.assertTrue(listed[0].endswith("/naya-helm-deployment:2026.10.1"))
+        self.assertTrue(listed[0].endswith("/naya-helm-deployment:2026.10.2"))
         unused = set(listed[1:]) - self.static_images()
         self.assertEqual(unused, set(), "listed images that no values.yaml entry refers to")
 

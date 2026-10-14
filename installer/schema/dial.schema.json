@@ -17,7 +17,7 @@
     },
     "release": {
       "type": "string",
-      "description": "DIAL release to install: `latest` (the newest release in this package) or a release id such as 2026.10.1. Every component version comes from the release."
+      "description": "DIAL release to install: `latest` (the newest release in this package) or a release id such as 2026.10.2. Every component version comes from the release."
     },
     "name": {
       "type": "string",

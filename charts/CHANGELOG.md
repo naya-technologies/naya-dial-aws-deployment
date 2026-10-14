@@ -1,5 +1,14 @@
 # Changelog - naya-helm-deployment (dial-platform)
 
+## 2026.10.2
+
+Updates two components. Every other image stays at `2026.10.1`; the chart structure and the placeholders are unchanged.
+
+- `naya-dial-core`: `2026.10.1` -> `2026.10.2`
+- `naya-dial-lic-ins`: `2026.10.1` -> `2026.10.2`
+
+Upgrade with `./dial-install upgrade` (no `--with-infra` needed: `infra_revision` is unchanged).
+
 ## 2026.10.1
 
 **Published** 2026-10-08 to `709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-helm-deployment:2026.10.1`

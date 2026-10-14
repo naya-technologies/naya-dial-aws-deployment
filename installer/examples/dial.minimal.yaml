@@ -5,7 +5,7 @@
 
 apiVersion: dial/v1
 name: acme
-release: latest                  # or a release id, e.g. 2026.10.1
+release: latest                  # or a release id, e.g. 2026.10.2
 
 aws:
   region: us-east-1

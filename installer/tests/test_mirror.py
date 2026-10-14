@@ -480,7 +480,8 @@ class RegistryInventoryTests(Base):
     def test_every_image_of_the_release_is_tagged_with_the_release_version(self):
         for image in self.images():
             tag = image.rsplit(":", 1)[1]
-            self.assertTrue(tag == "2026.10.1" or tag.startswith("2026.10.1-"), image)
+            expected = "2026.10.2" if image.rsplit("/", 1)[1].startswith(("naya-dial-core:", "naya-dial-lic-ins:")) else "2026.10.1"
+            self.assertTrue(tag == expected or tag.startswith(expected + "-"), image)
 
     def test_the_variants_are_the_ones_the_registry_has(self):
         text = " ".join(self.images())
@@ -497,7 +498,7 @@ class RegistryInventoryTests(Base):
         self.assertEqual([i.rsplit("/", 1)[1] for i in gap], ["naya-dial-postgres:15-alpine"])
 
     def test_the_chart_tag_is_free_in_the_chart_repository(self):
-        self.assertNotIn("2026.10.1", INVENTORY["naya-helm-deployment"])
+        self.assertNotIn("2026.10.2", INVENTORY["naya-helm-deployment"])
 
 
 class KnativeRolloutTests(Base):

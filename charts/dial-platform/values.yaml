@@ -94,7 +94,7 @@ dial:
     image:
       registry: "709825985650.dkr.ecr.us-east-1.amazonaws.com"
       repository: naya-technologies-by-epam/naya-dial-core
-      tag: '2026.10.1'
+      tag: '2026.10.2'
     serviceAccount:
       create: true
       name: dial-core
@@ -1200,7 +1200,7 @@ lic-ins:
   image:
     registry: 709825985650.dkr.ecr.us-east-1.amazonaws.com
     repository: naya-technologies-by-epam/naya-dial-lic-ins
-    tag: '2026.10.1'
+    tag: '2026.10.2'
     pullPolicy: IfNotPresent
   nodeSelector:
     workload: core

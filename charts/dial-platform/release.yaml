@@ -2,18 +2,16 @@
 # Image versions (platform, build tools and cluster add-ons) are pinned in the platform chart tagged with this release
 # id in the Marketplace; the installer reads them from there.
 apiVersion: dial-release/v1
-release: 2026.10.1
+release: 2026.10.2
 
 min_installer_version: 2.0.0     # older installers refuse this release
 infra_revision: 1                # bump when a CloudFormation template changes; upgrade then requires --with-infra
 notes: |
-  First release for installer 2.x, built for registries other than the original one:
-  - the chart names no registry, account or repository prefix (placeholders IMAGE_REGISTRY and IMAGE_PREFIX);
-  - every image, including cluster add-ons and build tools, is pinned in this chart;
-  - the installer needs no internet access for Istio, Knative or the autoscaler (they are shipped in its package).
+  Updates dial-core and the license installer (dial-lic-ins) to 2026.10.2.
+  All other components stay at 2026.10.1. No infrastructure change: an upgrade does not need --with-infra.
 
 chart:
-  version: 2026.10.1
+  version: 2026.10.2
 
 kubernetes:
   default_version: "1.35"

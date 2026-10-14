@@ -2,6 +2,7 @@
 # `latest` is what a config with `release: latest` (or no release) resolves to.
 # Releases newer than this package can still be installed: the installer reads their
 # manifest from the platform chart in the registry.
-latest: 2026.10.1
+latest: 2026.10.2
 releases:
+  - 2026.10.2
   - 2026.10.1

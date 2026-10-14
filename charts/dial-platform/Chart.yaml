@@ -2,7 +2,7 @@ apiVersion: v2
 name: naya-helm-deployment
 description: Umbrella chart for DIAL + DIAL Admin
 type: application
-version: 2026.10.1
+version: 2026.10.2
 appVersion: 1.0.0
 
 dependencies:

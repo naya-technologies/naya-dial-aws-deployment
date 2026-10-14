@@ -1,5 +1,5 @@
 {
- "captured": "2026-10-08",
+ "captured": "2026-10-14",
  "registry": "709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam",
  "repositories": {
   "naya-dial-admin-backend": [
@@ -58,6 +58,7 @@
    "2026.1.2",
    "2026.1.3",
    "2026.10.1",
+   "2026.10.2",
    "2026.4.1"
   ],
   "naya-dial-deployment-manager": [
@@ -113,6 +114,7 @@
   ],
   "naya-dial-lic-ins": [
    "2026.10.1",
+   "2026.10.2",
    "2026.4.1"
   ],
   "naya-dial-mcp-proxy": [

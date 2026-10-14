@@ -4,7 +4,7 @@
 
 apiVersion: dial/v1
 name: corp
-release: 2026.10.1     # pin a release for reproducible installs
+release: 2026.10.2     # pin a release for reproducible installs
 
 aws:
   region: il-central-1
