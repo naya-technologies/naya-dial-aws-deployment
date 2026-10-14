@@ -46,6 +46,27 @@ working examples are in [examples/](../examples/).
 Edits to this file take effect on the next `apply` (infrastructure) or `upgrade` (platform settings).
 Changing `name`, the VPC or the region of an installed environment is not supported; install a new one.
 
+## Models
+
+DIAL registers one model, with the stable id **`default.model`** and the display name **AWS Private Bedrock**. Every
+component refers to that id; which Bedrock model answers is decided only by its endpoint, so you can change the model
+in one place without touching anything else.
+
+The model is defined in `installer.yaml` under `models:`
+
+| Key | Meaning |
+|---|---|
+| `key` | The model id inside DIAL. Keep `default.model`. |
+| `display_name` | Name shown to users. |
+| `bedrock_model_id` | The Bedrock model, without the inference-profile prefix (for example `anthropic.claude-sonnet-5-5`). |
+| `inference_profile` | `global`, `us`, `eu`, `apac`, `auto` (from the region) or `none` (use `bedrock_model_id` exactly as written). Default `auto`. |
+
+The endpoint DIAL calls is `.../openai/deployments/<inference_profile>.<bedrock_model_id>/chat/completions`.
+With the shipped defaults that is `global.anthropic.claude-sonnet-5-5`. Enable access to that model in the Amazon Bedrock
+console of your account and region; the adapter's IAM role already allows Bedrock.
+
+To use another model, change `bedrock_model_id` (and `inference_profile` if needed) and run `./dial-install upgrade`.
+
 ## Cilium (overlay network)
 
 ```

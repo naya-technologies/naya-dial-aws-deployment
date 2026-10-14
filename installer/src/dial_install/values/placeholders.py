@@ -36,15 +36,22 @@ def _service_url(ctx: Context, component: str) -> str:
     return f"http://{helm['name']}-{component}.{helm['namespace']}.svc.cluster.local"
 
 
+def _bedrock_deployment(model: dict, region: str) -> str:
+    """Bedrock model id as the adapter receives it: `<inference profile>.<model id>`."""
+    profile = model.get("inference_profile", "auto")
+    if profile == "auto":
+        profile = _inference_profile_prefix(region)
+    return model["bedrock_model_id"] if profile == "none" else f"{profile}.{model['bedrock_model_id']}"
+
+
 def _core_config(ctx: Context) -> str:
-    prefix = _inference_profile_prefix(ctx.region)
     themes = ctx.cfg["domain"]["hosts"]["themes"]
     models = {
         model["key"]: {
             "type": "chat",
             "displayName": model["display_name"],
             "iconUrl": f"https://{themes}/{model['icon']}",
-            "endpoint": f"{_service_url(ctx, 'bedrock')}/openai/deployments/{prefix}.{model['bedrock_model_id']}/chat/completions",
+            "endpoint": f"{_service_url(ctx, 'bedrock')}/openai/deployments/{_bedrock_deployment(model, ctx.region)}/chat/completions",
         }
         for model in ctx.release["models"]
     }

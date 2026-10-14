@@ -228,18 +228,37 @@ class BuiltValuesTests(Base):
         built = values.build(make_ctx(), CHART_VALUES)["app-controller"]["env"]
         self.assertEqual(built["APP_AWS_REGION"], "us-east-1")
 
-    def test_core_config_registers_model_with_regional_profile(self):
+    def models(self, ctx=None, models=None):
+        ctx = ctx or self.ctx
+        if models is not None:
+            ctx.release["models"] = models
+        built = values.build(ctx, CHART_VALUES)
+        return json.loads(built["dial"]["core"]["secrets"]["aidial.config.json"])["models"]
+
+    def test_core_config_registers_the_default_model_behind_a_stable_id(self):
         config_json = json.loads(self.built["dial"]["core"]["secrets"]["aidial.config.json"])
-        self.assertIn("/deployments/us.anthropic.claude-sonnet-4-5", config_json["models"]["anthropic.claude-sonnet-4"]["endpoint"])
+        self.assertEqual(list(config_json["models"]), ["default.model"])
+        model = config_json["models"]["default.model"]
+        self.assertEqual(model["displayName"], "AWS Private Bedrock")
+        # the global inference profile is used even though the region is us-east-1
+        self.assertIn("/openai/deployments/global.anthropic.claude-sonnet-5-5/chat/completions", model["endpoint"])
         self.assertEqual(list(config_json["keys"]), [self.ctx.secret["core_admin_api_key"]])
 
-    def test_profile_prefix_for_other_regions(self):
+    def test_inference_profile_auto_follows_the_region(self):
+        base = {"key": "m", "display_name": "M", "icon": "a.svg", "bedrock_model_id": "anthropic.x"}
+        endpoint = self.models(models=[{**base, "inference_profile": "auto"}])["m"]["endpoint"]
+        self.assertIn("/deployments/us.anthropic.x/", endpoint)
         raw = example()
         raw["aws"]["region"] = "il-central-1"
         raw["domain"]["certificate_arn"] = raw["domain"]["certificate_arn"].replace("us-east-1", "il-central-1")
         ctx = make_ctx(cfg=config.resolve(raw, RELEASE))
-        endpoint = json.loads(values.build(ctx, CHART_VALUES)["dial"]["core"]["secrets"]["aidial.config.json"])["models"]["anthropic.claude-sonnet-4"]["endpoint"]
-        self.assertIn("/deployments/global.anthropic", endpoint)
+        endpoint = self.models(ctx, [{**base}])["m"]["endpoint"]                    # `auto` is the default
+        self.assertIn("/deployments/global.anthropic.x/", endpoint)
+
+    def test_inference_profile_none_uses_the_model_id_as_written(self):
+        base = {"key": "m", "display_name": "M", "icon": "a.svg", "bedrock_model_id": "arn-or-id"}
+        endpoint = self.models(models=[{**base, "inference_profile": "none"}])["m"]["endpoint"]
+        self.assertIn("/deployments/arn-or-id/chat/completions", endpoint)
 
     def test_feature_flags(self):
         built = values.build(make_ctx(cfg=resolved(features={"analytics": False, "deployment_manager": False})), CHART_VALUES)
