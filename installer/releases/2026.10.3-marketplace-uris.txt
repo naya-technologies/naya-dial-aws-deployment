@@ -1,4 +1,4 @@
-709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-helm-deployment:2026.10.2
+709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-helm-deployment:2026.10.3
 709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-dial-admin-backend:2026.10.1
 709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-dial-admin-frontend:2026.10.1
 709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-dial-alb-controllers:2026.10.1

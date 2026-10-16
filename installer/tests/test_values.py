@@ -231,7 +231,7 @@ class BuiltValuesTests(Base):
     def models(self, ctx=None, models=None):
         ctx = ctx or self.ctx
         if models is not None:
-            ctx.release["models"] = models
+            ctx.release = {**ctx.release, "models": models}       # a copy: the release is shared between tests
         built = values.build(ctx, CHART_VALUES)
         return json.loads(built["dial"]["core"]["secrets"]["aidial.config.json"])["models"]
 
@@ -243,6 +243,15 @@ class BuiltValuesTests(Base):
         # the global inference profile is used even though the region is us-east-1
         self.assertIn("/openai/deployments/global.anthropic.claude-sonnet-5-5/chat/completions", model["endpoint"])
         self.assertEqual(list(config_json["keys"]), [self.ctx.secret["core_admin_api_key"]])
+
+    def test_rag_uses_a_model_that_core_registers(self):
+        registered = json.loads(self.built["dial"]["core"]["secrets"]["aidial.config.json"])["models"]
+        env = CHART_VALUES["rag"]["env"]
+        used = {env["CHAT_MODEL"],
+                env["DIAL_RAG__REQUEST__QA_CHAIN__QUERY_CHAIN__LLM__DEPLOYMENT_NAME"],
+                env["DIAL_RAG__REQUEST__QA_CHAIN__CHAT_CHAIN__LLM__DEPLOYMENT_NAME"]}
+        self.assertEqual(used, {"default.model"})
+        self.assertTrue(used <= set(registered), "RAG names a model that Core does not know")
 
     def test_inference_profile_auto_follows_the_region(self):
         base = {"key": "m", "display_name": "M", "icon": "a.svg", "bedrock_model_id": "anthropic.x"}
@@ -446,7 +455,7 @@ if __name__ == "__main__":
 class MarketplaceListTests(Base):
     """The Marketplace requires every image the chart refers to in its delivery option, including components that are off by default."""
 
-    LIST = ROOT / "releases" / "2026.10.2-marketplace-uris.txt"
+    LIST = ROOT / "releases" / "2026.10.3-marketplace-uris.txt"
 
     def static_images(self):
         host = CHART_VALUES["installer"]["registry"].split("/")[0]
@@ -481,7 +490,7 @@ class MarketplaceListTests(Base):
 
     def test_the_list_holds_the_chart_and_nothing_that_is_unused(self):
         listed = self.listed()
-        self.assertTrue(listed[0].endswith("/naya-helm-deployment:2026.10.2"))
+        self.assertTrue(listed[0].endswith("/naya-helm-deployment:2026.10.3"))
         unused = set(listed[1:]) - self.static_images()
         self.assertEqual(unused, set(), "listed images that no values.yaml entry refers to")
 

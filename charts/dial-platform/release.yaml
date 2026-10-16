@@ -2,16 +2,17 @@
 # Image versions (platform, build tools and cluster add-ons) are pinned in the platform chart tagged with this release
 # id in the Marketplace; the installer reads them from there.
 apiVersion: dial-release/v1
-release: 2026.10.2
+release: 2026.10.3
 
 min_installer_version: 2.0.0     # older installers refuse this release
 infra_revision: 1                # bump when a CloudFormation template changes; upgrade then requires --with-infra
 notes: |
-  Updates dial-core and the license installer (dial-lic-ins) to 2026.10.2.
-  All other components stay at 2026.10.1. No infrastructure change: an upgrade does not need --with-infra.
+  RAG now uses the model `default.model` that the installer registers in DIAL Core (previously it named a
+  model that does not exist there). dial-core and dial-lic-ins stay at 2026.10.2, all other components at 2026.10.1.
+  No infrastructure change: an upgrade does not need --with-infra.
 
 chart:
-  version: 2026.10.2
+  version: 2026.10.3
 
 kubernetes:
   default_version: "1.35"

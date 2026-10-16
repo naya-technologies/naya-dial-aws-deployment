@@ -1,5 +1,12 @@
 # Changelog - naya-helm-deployment (dial-platform)
 
+## 2026.10.3
+
+- **RAG uses the model `default.model`.** `CHAT_MODEL` and both `DIAL_RAG__REQUEST__QA_CHAIN__*__LLM__DEPLOYMENT_NAME`
+  were set to a Bedrock model id that DIAL Core does not know. They now name `default.model`, the model the installer
+  registers in Core, so the model behind RAG is changed in one place (its endpoint).
+- No other change: dial-core and dial-lic-ins stay at `2026.10.2`, every other image at `2026.10.1`. `infra_revision` is unchanged.
+
 ## 2026.10.2
 
 Updates two components. Every other image stays at `2026.10.1`; the chart structure and the placeholders are unchanged.

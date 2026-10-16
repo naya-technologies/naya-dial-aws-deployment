@@ -498,7 +498,7 @@ class RegistryInventoryTests(Base):
         self.assertEqual([i.rsplit("/", 1)[1] for i in gap], ["naya-dial-postgres:15-alpine"])
 
     def test_the_chart_tag_is_free_in_the_chart_repository(self):
-        self.assertNotIn("2026.10.2", INVENTORY["naya-helm-deployment"])
+        self.assertNotIn("2026.10.3", INVENTORY["naya-helm-deployment"])
 
 
 class KnativeRolloutTests(Base):
