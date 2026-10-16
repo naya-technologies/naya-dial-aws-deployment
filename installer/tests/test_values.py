@@ -244,15 +244,6 @@ class BuiltValuesTests(Base):
         self.assertIn("/openai/deployments/global.anthropic.claude-sonnet-5-5/chat/completions", model["endpoint"])
         self.assertEqual(list(config_json["keys"]), [self.ctx.secret["core_admin_api_key"]])
 
-    def test_rag_uses_a_model_that_core_registers(self):
-        registered = json.loads(self.built["dial"]["core"]["secrets"]["aidial.config.json"])["models"]
-        env = CHART_VALUES["rag"]["env"]
-        used = {env["CHAT_MODEL"],
-                env["DIAL_RAG__REQUEST__QA_CHAIN__QUERY_CHAIN__LLM__DEPLOYMENT_NAME"],
-                env["DIAL_RAG__REQUEST__QA_CHAIN__CHAT_CHAIN__LLM__DEPLOYMENT_NAME"]}
-        self.assertEqual(used, {"default.model"})
-        self.assertTrue(used <= set(registered), "RAG names a model that Core does not know")
-
     def test_inference_profile_auto_follows_the_region(self):
         base = {"key": "m", "display_name": "M", "icon": "a.svg", "bedrock_model_id": "anthropic.x"}
         endpoint = self.models(models=[{**base, "inference_profile": "auto"}])["m"]["endpoint"]
@@ -352,7 +343,7 @@ class RealHelmTests(Base):
         _, docs = self.render_platform()
         names = {d["metadata"]["name"] for d in docs if d["kind"] == "Deployment"}
         for expected in ("dial-core", "dial-chat", "dial-admin-backend", "dial-frontend", "dial-themes",
-                         "dial-bedrock", "dial-rag", "dial-quickapps", "dial-app-controller", "dial-lic-ins"):
+                         "dial-bedrock", "dial-quickapps", "dial-app-controller", "dial-lic-ins"):
             self.assertIn(expected, names)
 
     def test_disabling_features_removes_their_workloads(self):

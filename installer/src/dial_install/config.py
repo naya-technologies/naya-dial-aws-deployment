@@ -21,7 +21,7 @@ from .errors import InstallerError
 from .schema import validate
 
 SERVICES = ("chat", "admin", "core", "themes", "grafana", "superset")
-NODE_GROUPS = ("core", "rag", "dynamic", "system")
+NODE_GROUPS = ("core", "dynamic", "system")
 _HOSTNAME = re.compile(r"^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$")
 
 

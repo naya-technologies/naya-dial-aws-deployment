@@ -5,11 +5,11 @@ apiVersion: dial-release/v1
 release: 2026.10.3
 
 min_installer_version: 2.0.0     # older installers refuse this release
-infra_revision: 1                # bump when a CloudFormation template changes; upgrade then requires --with-infra
+infra_revision: 2                # bump when a CloudFormation template changes; upgrade then requires --with-infra
 notes: |
-  RAG now uses the model `default.model` that the installer registers in DIAL Core (previously it named a
-  model that does not exist there). dial-core and dial-lic-ins stay at 2026.10.2, all other components at 2026.10.1.
-  No infrastructure change: an upgrade does not need --with-infra.
+  RAG is no longer part of the base platform: it is an optional module that is installed separately. The dedicated
+  RAG node group is removed from the cluster, so this release changes the infrastructure: upgrade with --with-infra.
+  Also: dial-core and dial-lic-ins 2026.10.2; all other components stay at 2026.10.1.
 
 chart:
   version: 2026.10.3

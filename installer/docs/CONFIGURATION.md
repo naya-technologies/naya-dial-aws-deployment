@@ -36,7 +36,7 @@ working examples are in [examples/](../examples/).
 | `kubernetes.public_endpoint` | `true` | `false` makes the cluster API private; run the installer from inside the VPC. |
 | `kubernetes.admin_arns` | `[]` | IAM users/roles that get cluster-admin in addition to whoever installs. Later: `./dial-install grant-access <arn>`. |
 | `tags` | `{}` | Tags added to every AWS resource the installer creates (cost center, owner, ...). |
-| `sizing.node_groups.<group>` | from `installer.yaml` | Override `instance_type`, `min`, `desired`, `max` (and `disk_gb` for `core`). Groups: `core`, `rag`, `dynamic`, `system`. |
+| `sizing.node_groups.<group>` | from `installer.yaml` | Override `instance_type`, `min`, `desired`, `max` (and `disk_gb` for `core`). Groups: `core`, `dynamic`, `system`. |
 | `registry.source` | from `installer.yaml` | `oci://<registry host>/<repository prefix>`: where the platform chart and every product image are published. Change it to use another AWS account; nothing else names an account. |
 | `registry.provider` | `ecr-mirror` | `ecr-mirror` copies the product images into your private ECR at install and upgrade and the cluster pulls from there; `public` pulls straight from the Marketplace registry. |
 | `features.analytics` | `true` | Superset, Grafana, InfluxDB. |

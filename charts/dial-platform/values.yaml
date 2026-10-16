@@ -680,49 +680,6 @@ realtime-analytics:
     INFLUX_BUCKET: "dial-analytics"
     INFLUX_API_TOKEN: 'PLACEHOLDER_INFLUXDB_TOKEN'
 
-rag:
-  replicaCount: 1
-  updateStrategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 0
-      maxUnavailable: 1
-  image:
-    registry: 709825985650.dkr.ecr.us-east-1.amazonaws.com
-    repository: naya-technologies-by-epam/naya-dial-rag
-    tag: '2026.10.1'
-    pullPolicy: IfNotPresent
-  containerPorts:
-    http: 5000
-  service:
-    type: ClusterIP
-    ports:
-      http: 80
-  nodeSelector:
-    workload: rag
-  tolerations:
-    - key: dedicated
-      operator: Equal
-      value: rag
-      effect: NoSchedule
-  serviceAccount:
-    create: true
-  env:
-    DIAL_URL: "http://{{ .Release.Name }}-core.{{ .Release.Namespace }}.svc.cluster.local"
-    DIAL_API_KEY: 'PLACEHOLDER_DIAL_API_KEY'
-    DIAL_RAG__INDEX_STORAGE__USE_DIAL_FILE_STORAGE: "True"
-    DIAL_RAG__CONFIG_PATH: /config/aws_embedding.yaml
-    CHAT_MODEL: "default.model"
-    DIAL_RAG__REQUEST__QA_CHAIN__QUERY_CHAIN__LLM__DEPLOYMENT_NAME: "default.model"
-    DIAL_RAG__REQUEST__QA_CHAIN__CHAT_CHAIN__LLM__DEPLOYMENT_NAME: "default.model"
-  resources:
-    requests:
-      memory: "4Gi"
-      cpu: "1000m"
-    limits:
-      memory: "6Gi"
-      cpu: "2000m"
-
 quickapps:
   replicaCount: 1
   image:

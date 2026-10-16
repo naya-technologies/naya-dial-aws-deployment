@@ -12,7 +12,7 @@ from dial_install import checks, deploy, secrets, tools, workflow
 from dial_install.runner import FakeRunner, Result
 
 CERT_NAMES = ["*.dial.acme.example"]
-INFRA_REVISION = {"value": 1}      # what the fake stacks report; tests change it to simulate older stacks
+INFRA_REVISION = {"value": RELEASE["infra_revision"]}      # what the fake stacks report; tests change it to simulate older stacks
 
 
 def stack_outputs(argv):
@@ -417,9 +417,9 @@ class UpgradeTests(Base):
             self.assertEqual([w for w in runner.writes if w[0] == "helm"], [])
             _, _, runner = self.run_upgrade("naya-helm-deployment-2026.8.1-old", with_infra=True)
             stacks = [w for w in runner.writes if w[:3] == ["aws", "cloudformation", "deploy"]]
-            self.assertTrue(all("dial-install:infra-revision=1" in w for w in stacks))
+            self.assertTrue(all(f"dial-install:infra-revision={RELEASE['infra_revision']}" in w for w in stacks))
         finally:
-            me.INFRA_REVISION["value"] = 1
+            me.INFRA_REVISION["value"] = RELEASE["infra_revision"]
 
     def test_with_infra_deploys_stacks_first(self):
         _, _, runner = self.run_upgrade("naya-helm-deployment-2026.8.1-old", with_infra=True)

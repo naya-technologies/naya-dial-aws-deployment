@@ -67,7 +67,7 @@ def _db_password() -> str:
 
 REQUIRED_KEYS: tuple[SecretKey, ...] = (
     SecretKey("db_master_password", "db_password", "Aurora master password and Admin database login"),
-    SecretKey("dial_api_key", "b64_48", "Internal API key used by RAG and QuickApps"),
+    SecretKey("dial_api_key", "b64_48", "Internal API key used by QuickApps"),
     SecretKey("core_admin_api_key", "b64_48", "Core admin API key"),
     SecretKey("core_encryption_secret", "hex16", "Core data encryption secret (never change after first install)"),
     SecretKey("core_encryption_key", "hex16", "Core data encryption key (never change after first install)"),

@@ -49,7 +49,7 @@ def parameters(ctx):
         "EnableContainerLogs": str(ctx.cfg["features"]["container_logs"]).lower(),
         "Cni": ctx.cfg["kubernetes"]["cni"],
     }
-    for group, prefix in (("core", "Core"), ("rag", "Rag"), ("dynamic", "Dynamic"), ("system", "System")):
+    for group, prefix in (("core", "Core"), ("dynamic", "Dynamic"), ("system", "System")):
         params[f"{prefix}NodeInstanceType"] = groups[group]["instance_type"]
         params[f"{prefix}NodeMinSize"] = groups[group]["min"]
         params[f"{prefix}NodeMaxSize"] = groups[group]["max"]

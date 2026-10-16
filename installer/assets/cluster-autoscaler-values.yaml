@@ -8,7 +8,7 @@ autoDiscovery:
   # Set by cluster-autoscaler-bootstrap.sh for the target cluster.
   clusterName: ""
   # Managed EKS node groups share the first two discovery tags. The explicit
-  # node-group tag keeps core, system, and RAG outside autoscaler ownership.
+  # node-group tag keeps core and system outside autoscaler ownership.
   tags:
     - "k8s.io/cluster-autoscaler/enabled=true"
     - "k8s.io/cluster-autoscaler/{{ .Values.autoDiscovery.clusterName }}=owned"

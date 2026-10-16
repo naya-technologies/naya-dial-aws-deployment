@@ -15,7 +15,7 @@ Parameters:
   PrivateSubnet2Id:
     Type: String
 
-  # Managed node groups (3 groups: core / rag / dynamic)
+  # Managed node groups (core / dynamic / system)
   CoreNodeInstanceType:
     Type: String
     Default: 'c6i.xlarge'
@@ -37,23 +37,6 @@ Parameters:
     Type: Number
     Default: 200
     Description: 'Root EBS volume size in GiB for the core node group'
-
-  RagNodeInstanceType:
-    Type: String
-    Default: 'c6i.xlarge'
-    Description: 'EC2 instance type for RAG node group (recommended: 4 vCPU / 8 GiB)'
-
-  RagNodeMinSize:
-    Type: Number
-    Default: 1
-
-  RagNodeMaxSize:
-    Type: Number
-    Default: 1
-
-  RagNodeDesiredSize:
-    Type: Number
-    Default: 1
 
   DynamicNodeInstanceType:
     Type: String
@@ -225,31 +208,6 @@ Resources:
         DesiredSize: !Ref CoreNodeDesiredSize
       Labels:
         workload: core
-
-  RagNodeGroup:
-    Type: AWS::EKS::Nodegroup
-    Condition: DeployNodes
-    DependsOn: EKSCluster
-    Properties:
-      ClusterName: !Ref ClusterName
-      NodegroupName: !Sub '${ClusterName}-rag'
-      NodeRole: !GetAtt EKSNodeRole.Arn
-      Subnets:
-        - !Ref PrivateSubnet1Id
-        - !Ref PrivateSubnet2Id
-      CapacityType: ON_DEMAND
-      InstanceTypes:
-        - !Ref RagNodeInstanceType
-      ScalingConfig:
-        MinSize: !Ref RagNodeMinSize
-        MaxSize: !Ref RagNodeMaxSize
-        DesiredSize: !Ref RagNodeDesiredSize
-      Labels:
-        workload: rag
-      Taints:
-        - Key: dedicated
-          Value: rag
-          Effect: NO_SCHEDULE
 
   DynamicNodeGroup:
     Type: AWS::EKS::Nodegroup

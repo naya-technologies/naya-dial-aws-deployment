@@ -31,12 +31,6 @@ dependencies:
     condition: realtime-analytics.enabled
 
   - name: dial-extension
-    alias: rag
-    version: 2.1.0
-    repository: https://d2w6p7i2gnitgl.cloudfront.net/helm
-    condition: rag.enabled
-
-  - name: dial-extension
     alias: quickapps
     version: 2.1.0
     repository: https://d2w6p7i2gnitgl.cloudfront.net/helm

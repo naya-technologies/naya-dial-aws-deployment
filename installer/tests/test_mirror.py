@@ -20,7 +20,7 @@ from test_workflow import SOURCE_HOST, crane_copy, crane_digest, MIRRORED, real_
 CHART_VALUES = yaml.safe_load(CHART_VALUES_TEXT)
 TARGET = "123456789012.dkr.ecr.us-east-1.amazonaws.com"
 HAVE_HELM = shutil.which("helm") is not None
-WORKLOADS, IN_VALUES, ADDONS = 18, 15, 10      # pod images / images named in values (build tools, ...) / add-on images
+WORKLOADS, IN_VALUES, ADDONS = 17, 15, 10      # pod images / images named in values (build tools, ...) / add-on images
 TOTAL = WORKLOADS + IN_VALUES + ADDONS
 
 

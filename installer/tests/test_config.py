@@ -114,11 +114,11 @@ class SemanticTests(Base):
         self.assertTrue(any("secrets.arn" in p for p in config.semantic_errors(cfg)))
 
     def test_node_group_ordering(self):
-        cfg = resolved(sizing={"node_groups": {"rag": {"min": 3, "desired": 1, "max": 2}}})
+        cfg = resolved(sizing={"node_groups": {"dynamic": {"min": 3, "desired": 1, "max": 2}}})
         self.assertTrue(any("min <= desired <= max" in p for p in config.semantic_errors(cfg)))
 
     def test_disk_only_for_core(self):
-        cfg = resolved(sizing={"node_groups": {"rag": {"disk_gb": 100}}})
+        cfg = resolved(sizing={"node_groups": {"dynamic": {"disk_gb": 100}}})
         self.assertTrue(any("disk_gb" in p for p in config.semantic_errors(cfg)))
 
     def test_non_16_cidr_needs_subnets(self):
