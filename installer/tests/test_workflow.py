@@ -617,7 +617,7 @@ class MirrorCommandTests(Base):
 class UninstallTests(Base):
     """`uninstall` removes only what the installation owns, in an order that cannot get stuck."""
 
-    def run_uninstall(self, **kw):
+    def run_uninstall(self, extra=None, **kw):
         stack = {"Stacks": [{"StackStatus": "CREATE_COMPLETE", "Tags": [{"Key": "dial-install:infra-revision", "Value": "1"}],
                              "Outputs": [{"OutputKey": "VPCId", "OutputValue": "vpc-0a1"}]}]}
         runner = FakeRunner({**aws_fakes(), ("aws", "cloudformation", "describe-stacks"): ok_json(stack),
@@ -626,7 +626,8 @@ class UninstallTests(Base):
                                  {"ResourceType": "AWS::S3::Bucket", "PhysicalResourceId": "acme-bucket"},
                                  {"ResourceType": "AWS::ECR::Repository", "PhysicalResourceId": "aidial/code-app"}]}),
                              ("aws", "ecr", "describe-repositories"): ok_json({"repositories": []}),
-                             ("aws", "license-manager", "list-received-licenses"): ok_json({"Licenses": []})})
+                             ("aws", "license-manager", "list-received-licenses"): ok_json({"Licenses": []}),
+                             **(extra or {})})
         say = Capture()
         code = workflow.cmd_uninstall(options(**kw), runner, say, ask=lambda _q: "acme")
         return code, say.text, runner
@@ -656,6 +657,30 @@ class UninstallTests(Base):
         order = [w.split("--stack-name ")[1].split()[0] for w in self.writes(runner) if "delete-stack" in w]
         self.assertEqual(order[-3:], ["acme-endpoints", "acme-network", "acme-storage"])
         self.assertIn("acme-compute", order[:-3])
+
+    def test_security_groups_left_by_the_load_balancer_controller_go_before_the_network(self):
+        groups = {"SecurityGroups": [{"GroupId": "sg-1", "GroupName": "k8s-traffic-acme"},
+                                     {"GroupId": "sg-2", "GroupName": "default"}]}
+        _, _, runner = self.run_uninstall(extra={("aws", "ec2", "describe-security-groups"): ok_json(groups)}, assume_yes=True)
+        writes = self.writes(runner)
+        group = next(i for i, w in enumerate(writes) if "delete-security-group --group-id sg-1" in w)
+        network = next(i for i, w in enumerate(writes) if "delete-stack --stack-name acme-network" in w)
+        self.assertLess(group, network)
+        self.assertFalse(any("sg-2" in w for w in writes))
+
+    def test_the_versioned_bucket_is_emptied_of_versions_and_delete_markers_before_its_stack_goes(self):
+        pages = [{"Versions": [{"Key": "a", "VersionId": "v1"}], "DeleteMarkers": [{"Key": "b", "VersionId": "m1"}]}, {}]
+
+        def listing(_argv):
+            return Result(0, json.dumps(pages.pop(0) if pages else {}), "")
+
+        _, _, runner = self.run_uninstall(extra={("aws", "s3api", "list-object-versions"): listing}, assume_yes=True)
+        writes = self.writes(runner)
+        delete = next(i for i, w in enumerate(writes) if "s3api delete-objects --bucket acme-bucket" in w)
+        self.assertIn('"VersionId": "v1"', writes[delete])
+        self.assertIn('"VersionId": "m1"', writes[delete])
+        stack = next(i for i, w in enumerate(writes) if "delete-stack --stack-name acme-storage" in w)
+        self.assertLess(delete, stack)
 
     def test_database_protection_is_switched_off_before_its_stack_is_deleted(self):
         _, _, runner = self.run_uninstall(assume_yes=True)

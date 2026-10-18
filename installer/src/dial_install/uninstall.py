@@ -171,6 +171,22 @@ class Uninstaller:
                 if group.get("VpcId") == self.vpc_id and self.vpc_id:
                     self.cloud.aws("elbv2", "delete-target-group", "--target-group-arn", group["TargetGroupArn"],
                                    write=True, check=False)
+        self._remove_controller_security_groups()
+
+    def _remove_controller_security_groups(self) -> None:
+        """Security groups the load balancer controller created (`k8s-*`). They can outlive the cluster and would
+        stop the network stack from deleting its VPC."""
+        if not self.vpc_id or self.dry_run:
+            return
+        for _ in range(3):                      # a group can only go after the groups that refer to it
+            found = self.cloud.aws_json("ec2", "describe-security-groups", "--filters", f"Name=vpc-id,Values={self.vpc_id}",
+                                        check=False) or {}
+            groups = [g for g in found.get("SecurityGroups", []) if g.get("GroupName", "").startswith("k8s-")]
+            if not groups:
+                return
+            for group in groups:
+                self.cloud.aws("ec2", "delete-security-group", "--group-id", group["GroupId"], write=True, check=False)
+            time.sleep(5)
 
     def private_zone(self) -> None:
         zone_name = f"{self.namespace}.knative.{self.ctx.name}.internal"
@@ -226,7 +242,23 @@ class Uninstaller:
             self.cloud.aws("ecr", "delete-repository", "--repository-name", repo, "--force", write=True, check=False)
         self._buckets = self._resources(stack, "AWS::S3::Bucket")
         for bucket in self._buckets:
+            self._empty_bucket(bucket)
+
+    def _empty_bucket(self, bucket: str) -> None:
+        """Remove every object, every version and every delete marker (the storage bucket is versioned, and
+        `aws s3 rm` leaves versions and markers behind, so the bucket could not be deleted)."""
+        if self.dry_run:
             self.cloud.aws("s3", "rm", f"s3://{bucket}", "--recursive", write=True, check=False)
+            return
+        for _ in range(200):                                     # 1000 entries per round
+            listing = self.cloud.aws_json("s3api", "list-object-versions", "--bucket", bucket, "--max-items", "1000",
+                                          check=False) or {}
+            entries = [{"Key": item["Key"], "VersionId": item["VersionId"]}
+                       for item in [*(listing.get("Versions") or []), *(listing.get("DeleteMarkers") or [])]]
+            if not entries:
+                return
+            self.cloud.aws("s3api", "delete-objects", "--bucket", bucket,
+                           "--delete", json.dumps({"Objects": entries, "Quiet": True}), write=True, check=False)
 
     def _delete_bucket_left_behind(self, stack: str) -> None:
         """The bucket is kept by the stack on purpose (DeletionPolicy: Retain); it is removed here."""
