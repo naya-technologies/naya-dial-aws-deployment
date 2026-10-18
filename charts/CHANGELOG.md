@@ -14,7 +14,13 @@
   is `0.45.7`; Admin read Core's state in the old schema, so it never matched what Admin exported. It is now `0.45.7`.
 - The installer registers the default model with the topic `hidden` (Core: `descriptionKeywords`), so the chat UI and the catalog do not
   list it.
-- No infrastructure change; images unchanged from 2026.10.3.
+- **Flow Builder is part of the platform:** `flows-core` (the backend that runs flows for DIAL Core and serves the editor's API) and
+  `flows` (the visual editor), from `naya-dial-flows-backend` and `naya-dial-flows-frontend` `2026.10.1`. The ALB exposes the backend
+  only on `/api` and `/auth`; DIAL Core reaches the runner and the chat server reaches the published-flow catalog inside the cluster.
+  Core registers the application type `Flow Builder` (`https://FlowBuilder`); QuickApps is shown as `Agent Builder`.
+- **Infrastructure change (`infra_revision` 3):** two new host names (`flows`, `flows-core`) and the Cognito sign-in callbacks for
+  them. The secret needs the key `flows_session_secret`. An upgrade needs `--with-infra`.
+- Images unchanged from 2026.10.3, plus the two Flows images.
 
 ## 2026.10.3
 

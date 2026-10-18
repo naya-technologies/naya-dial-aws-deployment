@@ -5,12 +5,13 @@ apiVersion: dial-release/v1
 release: 2026.10.4
 
 min_installer_version: 2.0.0     # older installers refuse this release
-infra_revision: 2                # bump when a CloudFormation template changes; upgrade then requires --with-infra
+infra_revision: 3                # bump when a CloudFormation template changes; upgrade then requires --with-infra
 notes: |
-  Fixes "Chat is unavailable": the chat UI runs every conversation through the application `managed-model-chat`, which the
-  platform now registers in DIAL Core (and the chat UI is told its id). No infrastructure change.
-  Since 2026.10.3: RAG is not part of the platform (it is installed as an optional module); the dedicated RAG node group is
-  gone. dial-core and dial-lic-ins are 2026.10.2; all other components 2026.10.1.
+  Adds Flow Builder to the platform: the backend (flows-core) and the editor (flows), two new host names, the application type
+  "Flow Builder" in DIAL Core, and the "Agent Builder" name for QuickApps. The sign-in callbacks of the Cognito app client change,
+  so an upgrade needs --with-infra, and the secret needs the new key flows_session_secret (dial-install init creates it).
+  Also: chat works in the UI (managed chat application), the default model is hidden, RAG is not part of the platform.
+  dial-core and dial-lic-ins are 2026.10.2; all other components 2026.10.1.
 
 chart:
   version: 2026.10.4

@@ -20,7 +20,7 @@ from . import ROOT
 from .errors import InstallerError
 from .schema import validate
 
-SERVICES = ("chat", "admin", "core", "themes", "grafana", "superset")
+SERVICES = ("chat", "admin", "core", "themes", "grafana", "superset", "flows", "flows-core")
 NODE_GROUPS = ("core", "dynamic", "system")
 _HOSTNAME = re.compile(r"^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$")
 

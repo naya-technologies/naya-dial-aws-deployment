@@ -37,6 +37,18 @@ dependencies:
     condition: quickapps.enabled
 
   - name: dial-extension
+    alias: flows-core
+    version: 2.1.0
+    repository: https://d2w6p7i2gnitgl.cloudfront.net/helm
+    condition: flows-core.enabled
+
+  - name: dial-extension
+    alias: flows
+    version: 2.1.0
+    repository: https://d2w6p7i2gnitgl.cloudfront.net/helm
+    condition: flows.enabled
+
+  - name: dial-extension
     alias: file-processing
     version: 2.1.0
     repository: https://d2w6p7i2gnitgl.cloudfront.net/helm

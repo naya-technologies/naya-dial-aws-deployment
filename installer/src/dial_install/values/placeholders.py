@@ -20,7 +20,7 @@ SECRET_PLACEHOLDERS = (
     "CORE_ENCRYPTION_SECRET", "CORE_ENCRYPTION_KEY", "COGNITO_LOGGING_SALT", "CORE_ADMIN_API_KEY", "DIAL_API_KEY",
     "ADMIN_NEXTAUTH_SECRET", "SUPERSET_ADMIN_PASSWORD", "SUPERSET_SECRET_KEY",
     "SUPERSET_DASHBOARD_ARTIFACT_SIGNING_SECRET", "DASHBOARDS_SIGNING_SECRET", "INFLUXDB_PASSWORD",
-    "INFLUXDB_TOKEN", "GRAFANA_ADMIN_PASSWORD", "ADMIN_DB_PASSWORD",
+    "INFLUXDB_TOKEN", "GRAFANA_ADMIN_PASSWORD", "ADMIN_DB_PASSWORD", "FLOWS_SESSION_SECRET",
 )
 
 
@@ -144,6 +144,8 @@ def table(ctx: Context) -> dict[str, Callable[[], str]]:
         "THEMES_PUBLIC_HOST": lambda: hosts["themes"],
         "GRAFANA_PUBLIC_HOST": lambda: hosts["grafana"],
         "SUPERSET_PUBLIC_HOST": lambda: hosts["superset"],
+        "FLOWS_PUBLIC_HOST": lambda: hosts["flows"],
+        "FLOWS_CORE_PUBLIC_HOST": lambda: hosts["flows-core"],
         "ADMIN_PUBLIC_URL": lambda: "https://" + hosts["admin"],
         "THEMES_PUBLIC_URL": lambda: "https://" + hosts["themes"],
         # network

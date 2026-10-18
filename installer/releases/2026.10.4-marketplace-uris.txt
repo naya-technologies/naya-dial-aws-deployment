@@ -42,3 +42,5 @@
 709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-dial-syft:2026.10.1
 709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-dial-themes:2026.10.1
 709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-dial-ui:2026.10.1
+709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-dial-flows-backend:2026.10.1
+709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-dial-flows-frontend:2026.10.1

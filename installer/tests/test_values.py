@@ -249,7 +249,7 @@ class BuiltValuesTests(Base):
 
     def test_core_offers_the_agent_builder_application_type(self):
         config_json = json.loads(self.built["dial"]["core"]["secrets"]["aidial.config.json"])
-        schema, = config_json["applicationTypeSchemas"]
+        schema = next(s for s in config_json["applicationTypeSchemas"] if s["dial:applicationTypeDisplayName"] == "Agent Builder")
         self.assertEqual(schema["$id"], "https://mydial.epam.com/custom_application_schemas/quickapps2")
         self.assertEqual(schema["dial:applicationTypeDisplayName"], "Agent Builder")
         base = "http://dial-quickapps.dial.svc.cluster.local"
@@ -258,6 +258,16 @@ class BuiltValuesTests(Base):
         self.assertEqual(schema["dial:applicationTypeSchemaEndpoint"], f"{base}/v1/configuration-support/application-schema")
         self.assertIs(schema["dial:appendApplicationPropertiesHeader"], False)
         self.assertIs(schema["dial:applicationTypeAssistantAttachmentsInRequestSupported"], False)
+
+    def test_core_offers_the_flow_builder_application_type_inside_the_cluster(self):
+        config_json = json.loads(self.built["dial"]["core"]["secrets"]["aidial.config.json"])
+        schema = next(s for s in config_json["applicationTypeSchemas"] if s["dial:applicationTypeDisplayName"] == "Flow Builder")
+        base = "http://dial-flows-core.dial.svc.cluster.local"
+        self.assertEqual(schema["$id"], "https://FlowBuilder")
+        self.assertEqual(schema["dial:applicationTypeCompletionEndpoint"], f"{base}/openai/deployments/flow-builder/chat/completions")
+        self.assertEqual(schema["dial:applicationTypeSchemaEndpoint"], f"{base}/v1/configuration-support/application-schema")
+        self.assertNotIn("dial:applicationTypeConfigurationEndpoint", schema)
+        self.assertIs(schema["dial:appendApplicationPropertiesHeader"], True)
 
     def test_inference_profile_auto_follows_the_region(self):
         base = {"key": "m", "display_name": "M", "icon": "a.svg", "bedrock_model_id": "anthropic.x"}
@@ -334,6 +344,35 @@ class RealHelmTests(Base):
         self.assertEqual(result.returncode, 0, result.stderr)
         return result.stdout, [d for d in yaml.safe_load_all(result.stdout) if d]
 
+    def test_flow_builder_backend_is_reachable_from_outside_only_on_api_and_auth(self):
+        ctx = make_ctx()
+        _, docs = self.render_platform(ctx)
+        ingresses = {d["metadata"]["name"]: d for d in docs if d["kind"] == "Ingress"}
+        hosts = ctx.cfg["domain"]["hosts"]
+        backend = ingresses["dial-flows-core"]["spec"]["rules"]
+        self.assertEqual([r["host"] for r in backend], [hosts["flows-core"]])
+        self.assertEqual(sorted(p["path"] for p in backend[0]["http"]["paths"]), ["/api", "/auth"])    # never "/" or "/openai"
+        editor = ingresses["dial-flows"]["spec"]["rules"]
+        self.assertEqual([(r["host"], [p["path"] for p in r["http"]["paths"]]) for r in editor], [(hosts["flows"], ["/"])])
+
+    def test_flow_builder_is_wired_to_core_chat_and_sign_in(self):
+        ctx = make_ctx()
+        _, docs = self.render_platform(ctx)
+
+        def env_of(name):
+            deployment = next(d for d in docs if d["kind"] == "Deployment" and d["metadata"]["name"] == name)
+            return {e["name"]: e.get("value") for e in deployment["spec"]["template"]["spec"]["containers"][0]["env"]}
+        hosts = ctx.cfg["domain"]["hosts"]
+        backend = env_of("dial-flows-core")
+        self.assertEqual(backend["DIAL_CORE_URL"], "http://dial-core.dial.svc.cluster.local")
+        self.assertEqual(backend["AUTH_BASE_URL"], "https://" + hosts["flows-core"])
+        self.assertEqual(backend["AUTH_COGNITO_HOST"], FAKE_OUTPUTS["identity"]["CognitoIssuerUrl"])
+        self.assertIn(hosts["flows"], backend["CORS_ORIGINS"])
+        self.assertEqual(env_of("dial-flows")["FLOWS_BACKEND_URL"], "https://" + hosts["flows-core"])
+        self.assertEqual(env_of("dial-chat")["APP_FLOWS_API_BASE"], "http://dial-flows-core.dial.svc.cluster.local")
+        secret = next(d for d in docs if d["kind"] == "Secret" and d["metadata"]["name"] == "dial-flows-core")
+        self.assertEqual(sorted(secret.get("stringData", secret.get("data", {}))), ["AUTH_COGNITO_SECRET", "AUTH_SESSION_SECRET", "DIAL_API_KEY"])
+
     def test_chat_runs_conversations_through_a_registered_managed_chat_application(self):
         """The chat UI sends every conversation with a model to the application named by APP_MANAGED_CHAT_APPLICATION_ID.
         Without that application in Core the UI shows "Chat is unavailable"."""
@@ -386,7 +425,7 @@ class RealHelmTests(Base):
         _, docs = self.render_platform()
         names = {d["metadata"]["name"] for d in docs if d["kind"] == "Deployment"}
         for expected in ("dial-core", "dial-chat", "dial-admin-backend", "dial-frontend", "dial-themes",
-                         "dial-bedrock", "dial-quickapps", "dial-app-controller", "dial-lic-ins"):
+                         "dial-bedrock", "dial-quickapps", "dial-app-controller", "dial-lic-ins", "dial-flows-core", "dial-flows"):
             self.assertIn(expected, names)
 
     def test_disabling_features_removes_their_workloads(self):

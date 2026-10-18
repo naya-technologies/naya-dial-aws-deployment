@@ -73,6 +73,15 @@ placeholders:
   BEDROCK_SERVICE_ROLE_ARN:
     source: stack-output
     description: IAM role of the Bedrock adapter.
+  FLOWS_CORE_PUBLIC_HOST:
+    source: config
+    description: Host name of the Flow Builder backend (only /api and /auth are exposed).
+  FLOWS_PUBLIC_HOST:
+    source: config
+    description: Host name of the Flow Builder editor.
+  FLOWS_SESSION_SECRET:
+    source: secret
+    description: key flows_session_secret
   CHAT_PUBLIC_HOST:
     source: config
     description: Host name of Chat.

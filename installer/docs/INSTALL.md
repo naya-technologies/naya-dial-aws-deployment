@@ -48,7 +48,7 @@ already contains them and needs no internet access at all, only access to AWS.
 ```
 
 Answer the questions; press Enter to accept the value in brackets. You will be asked for the region, the domain, the
-host name of every service (chat, admin, core, themes, grafana, superset: the proposal is `<service>.<your domain>`, and you can
+host name of every service (chat, admin, core, themes, grafana, superset, flows, flows-core: the proposal is `<service>.<your domain>`, and you can
 choose any other name for each one), the certificate ARN, whether to create a new network or use an existing one, whether the application is internal or public,
 and how users sign in. At the end it writes two files:
 

@@ -11,7 +11,7 @@ working examples are in [examples/](../examples/).
 | `aws.region` | required | Region to install into. |
 | `aws.account_id` | none | Safety net: `check` fails if your credentials belong to another account. |
 | `domain.base` | none | Base domain. Hosts become `<service>.<base>`. Required unless every host is listed. |
-| `domain.hosts.<service>` | `<service>.<base>` | Full host name override for `chat`, `admin`, `core`, `themes`, `grafana`, `superset`. |
+| `domain.hosts.<service>` | `<service>.<base>` | Full host name override for `chat`, `admin`, `core`, `themes`, `grafana`, `superset`, `flows` (Flow Builder editor), `flows-core` (Flow Builder backend; only `/api` and `/auth` are reachable from outside). |
 | `domain.certificate_arn` | required | ISSUED ACM certificate covering every final host name. |
 | `secrets.arn` | required | ARN of the Secrets Manager secret you created. |
 | `network.provider` | `create` | `create`, `existing-vpc` or `shared-vpc` (RAM). |

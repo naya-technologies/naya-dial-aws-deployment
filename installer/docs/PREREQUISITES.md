@@ -49,7 +49,7 @@ With `database.auth: iam` the installer creates the PostgreSQL role for DIAL Adm
 ## Domain and certificate
 
 - A domain you control, for example `dial.example.com`. DIAL uses these host names (you can rename any of them):
-  `chat`, `admin`, `core`, `themes`, `grafana`, `superset` under that domain.
+  `chat`, `admin`, `core`, `themes`, `grafana`, `superset`, `flows`, `flows-core` under that domain (a wildcard certificate `*.<domain>` covers all of them).
 - An **ACM certificate in the same account and region**, status **ISSUED**, that covers every host name.
   A wildcard such as `*.dial.example.com` covers all default names.
 

@@ -15,6 +15,14 @@ Parameters:
     Type: String
     Description: Admin host name (callback URL)
 
+  FlowsHost:
+    Type: String
+    Description: Flow Builder editor host name (sign-out URL)
+
+  FlowsCoreHost:
+    Type: String
+    Description: Flow Builder backend host name (sign-in callback URL)
+
   DisableSelfRegistration:
     Type: String
     Default: 'true'
@@ -152,9 +160,13 @@ Resources:
         - !Sub 'https://${ChatHost}/api/auth/callback/cognito'
         - !Sub 'https://${AdminHost}'
         - !Sub 'https://${AdminHost}/api/auth/callback/cognito'
+        - !Sub 'https://${FlowsCoreHost}/auth/callback'
+        - !Sub 'https://${FlowsHost}'
       LogoutURLs:
         - !Sub 'https://${ChatHost}'
         - !Sub 'https://${AdminHost}'
+        - !Sub 'https://${FlowsHost}'
+        - !Sub 'https://${FlowsCoreHost}'
       SupportedIdentityProviders:
         - COGNITO
         - !If [SAMLProviderEnabled, !Ref SAMLIdentityProvider, !Ref AWS::NoValue]

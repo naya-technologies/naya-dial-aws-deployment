@@ -132,8 +132,8 @@ class CheckTests(Base):
     def test_healthy_environment_passes(self):
         code, text, _ = self.run_check()
         self.assertEqual(code, 0, text)
-        self.assertIn("all 14 required keys are present", text)
-        self.assertIn("issued and covers all 6 host names", text)
+        self.assertIn("all 15 required keys are present", text)
+        self.assertIn("issued and covers all 8 host names", text)
 
     def test_missing_secret_key_fails_with_fix(self):
         doc = secrets.generate()

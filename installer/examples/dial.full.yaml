@@ -20,6 +20,8 @@ domain:
     themes: ai-themes.example.org
     grafana: ai-grafana.example.org
     superset: ai-superset.example.org
+    flows: ai-flows.example.org
+    flows-core: ai-flows-core.example.org
 
 secrets:
   arn: arn:aws:secretsmanager:il-central-1:123456789012:secret:dial/corp-AbCdEf

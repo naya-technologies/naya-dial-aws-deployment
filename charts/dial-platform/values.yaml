@@ -247,6 +247,7 @@ dial:
     env:
       BFF_PORT: '3001'
       APP_MANAGED_CHAT_APPLICATION_ID: managed-model-chat
+      APP_FLOWS_API_BASE: "http://{{ .Release.Name }}-flows-core.{{ .Release.Namespace }}.svc.cluster.local"
       APP_DIAL_API_BASE: http://PLACEHOLDER_DIAL_RELEASE_NAME-core.dial.svc.cluster.local
       APP_DIAL_ADMIN_API_BASE: http://PLACEHOLDER_DIAL_RELEASE_NAME-admin-backend.dial.svc.cluster.local/
       APP_THEMES_HOST: 'https://PLACEHOLDER_THEMES_PUBLIC_HOST'
@@ -753,6 +754,198 @@ quickapps:
       memory: "512Mi"
     limits:
       memory: "1Gi"
+
+# Flow Builder: the backend runs flows for DIAL Core (application type "Flow Builder") and serves the editor's API; the frontend
+# is the visual editor. The ALB exposes the backend only on /api and /auth (the editor and the sign-in need them); DIAL Core and
+# the chat server reach everything else (/openai, the schema endpoint, the catalog) inside the cluster.
+flows-core:
+  enabled: true
+  fullnameOverride: dial-flows-core
+  replicaCount: 1
+  image:
+    registry: 709825985650.dkr.ecr.us-east-1.amazonaws.com
+    repository: naya-technologies-by-epam/naya-dial-flows-backend
+    tag: '2026.10.1'
+    pullPolicy: IfNotPresent
+  containerPorts:
+    http: 8000
+  service:
+    type: ClusterIP
+    ports:
+      http: 80
+  nodeSelector:
+    workload: core
+  podSecurityContext:
+    enabled: false
+  containerSecurityContext:
+    enabled: false
+  serviceAccount:
+    create: true
+    automountServiceAccountToken: false
+  automountServiceAccountToken: false
+  env:
+    DIAL_CORE_URL: "http://{{ .Release.Name }}-core.{{ .Release.Namespace }}.svc.cluster.local"
+    DIAL_CHAT_URL: https://PLACEHOLDER_CHAT_PUBLIC_HOST
+    DIAL_ADMIN_URL: https://PLACEHOLDER_ADMIN_PUBLIC_HOST
+    CORS_ORIGINS: https://PLACEHOLDER_FLOWS_PUBLIC_HOST,https://PLACEHOLDER_CHAT_PUBLIC_HOST,https://PLACEHOLDER_ADMIN_PUBLIC_HOST
+    AUTH_MODE: cognito
+    AUTH_BASE_URL: https://PLACEHOLDER_FLOWS_CORE_PUBLIC_HOST
+    AUTH_ALLOWED_RETURN_HOSTS: PLACEHOLDER_FLOWS_PUBLIC_HOST,PLACEHOLDER_FLOWS_CORE_PUBLIC_HOST
+    AUTH_COGNITO_HOST: PLACEHOLDER_COGNITO_HOST
+    AUTH_COGNITO_CLIENT_ID: PLACEHOLDER_COGNITO_CLIENT_ID
+    AUTH_COGNITO_ROLES_FIELD: "cognito:groups"
+    ADMIN_ROLE_NAMES: admin
+    AUTH_COGNITO_LOGIN_PAGE_ENABLED: "false"
+    AUTH_COOKIE_SECURE: "true"
+    AUTH_COOKIE_SAME_SITE: lax
+    AWS_REGION: PLACEHOLDER_AWS_REGION
+    AWS_DEFAULT_REGION: PLACEHOLDER_AWS_REGION
+    AWS_EC2_METADATA_DISABLED: "true"
+  secrets:
+    DIAL_API_KEY: PLACEHOLDER_DIAL_API_KEY
+    AUTH_SESSION_SECRET: PLACEHOLDER_FLOWS_SESSION_SECRET
+    AUTH_COGNITO_SECRET: PLACEHOLDER_COGNITO_CLIENT_SECRET
+  ingress:
+    enabled: true
+    ingressClassName: alb
+    hosts:
+      - PLACEHOLDER_FLOWS_CORE_PUBLIC_HOST
+    path: /api
+    pathType: Prefix
+    extraPaths:
+      - path: /auth
+        pathType: Prefix
+        backend:
+          service:
+            name: dial-flows-core
+            port:
+              number: 80
+    annotations:
+      alb.ingress.kubernetes.io/scheme: 'PLACEHOLDER_ALB_SCHEME'
+      alb.ingress.kubernetes.io/target-type: ip
+      alb.ingress.kubernetes.io/healthcheck-path: /health
+      alb.ingress.kubernetes.io/success-codes: "200"
+      alb.ingress.kubernetes.io/listen-ports: '[{ "HTTP" : 80, "HTTPS" : 443 }]'
+      alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS-1-2-Ext-2018-06
+      alb.ingress.kubernetes.io/certificate-arn: PLACEHOLDER_ACM_CERTIFICATE_ARN
+      alb.ingress.kubernetes.io/ssl-redirect: "443"
+      alb.ingress.kubernetes.io/security-groups: PLACEHOLDER_ALB_SECURITY_GROUP_ID
+      alb.ingress.kubernetes.io/subnets: 'PLACEHOLDER_ALB_SUBNETS'
+      alb.ingress.kubernetes.io/group.name: 'PLACEHOLDER_ALB_GROUP_NAME'
+  livenessProbe:
+    enabled: true
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readinessProbe:
+    enabled: true
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 15
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  startupProbe:
+    enabled: true
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 30
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      memory: 2Gi
+
+flows:
+  enabled: true
+  fullnameOverride: dial-flows
+  replicaCount: 1
+  image:
+    registry: 709825985650.dkr.ecr.us-east-1.amazonaws.com
+    repository: naya-technologies-by-epam/naya-dial-flows-frontend
+    tag: '2026.10.1'
+    pullPolicy: IfNotPresent
+  containerPorts:
+    http: 3000
+  service:
+    type: ClusterIP
+    ports:
+      http: 80
+  nodeSelector:
+    workload: core
+  podSecurityContext:
+    enabled: false
+  containerSecurityContext:
+    enabled: false
+  serviceAccount:
+    create: true
+    automountServiceAccountToken: false
+  automountServiceAccountToken: false
+  env:
+    FLOWS_BACKEND_URL: https://PLACEHOLDER_FLOWS_CORE_PUBLIC_HOST
+    FLOWS_DIAL_ALLOWED_ORIGINS: https://PLACEHOLDER_CHAT_PUBLIC_HOST,https://PLACEHOLDER_ADMIN_PUBLIC_HOST
+  ingress:
+    enabled: true
+    ingressClassName: alb
+    hosts:
+      - PLACEHOLDER_FLOWS_PUBLIC_HOST
+    path: /
+    pathType: Prefix
+    annotations:
+      alb.ingress.kubernetes.io/scheme: 'PLACEHOLDER_ALB_SCHEME'
+      alb.ingress.kubernetes.io/target-type: ip
+      alb.ingress.kubernetes.io/healthcheck-path: /
+      alb.ingress.kubernetes.io/success-codes: "200"
+      alb.ingress.kubernetes.io/listen-ports: '[{ "HTTP" : 80, "HTTPS" : 443 }]'
+      alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS-1-2-Ext-2018-06
+      alb.ingress.kubernetes.io/certificate-arn: PLACEHOLDER_ACM_CERTIFICATE_ARN
+      alb.ingress.kubernetes.io/ssl-redirect: "443"
+      alb.ingress.kubernetes.io/security-groups: PLACEHOLDER_ALB_SECURITY_GROUP_ID
+      alb.ingress.kubernetes.io/subnets: 'PLACEHOLDER_ALB_SUBNETS'
+      alb.ingress.kubernetes.io/group.name: 'PLACEHOLDER_ALB_GROUP_NAME'
+  livenessProbe:
+    enabled: true
+    httpGet:
+      path: /
+      port: http
+    initialDelaySeconds: 20
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readinessProbe:
+    enabled: true
+    httpGet:
+      path: /
+      port: http
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  startupProbe:
+    enabled: true
+    httpGet:
+      path: /
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 30
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 256Mi
 
 file-processing:
   # Opt in per product only after publishing the processor and QuickApps client.

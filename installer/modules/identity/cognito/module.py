@@ -31,6 +31,8 @@ def parameters(ctx):
         "UserPoolName": identity["user_pool_name"],
         "ChatHost": hosts["chat"],
         "AdminHost": hosts["admin"],
+        "FlowsHost": hosts["flows"],
+        "FlowsCoreHost": hosts["flows-core"],
         "DisableSelfRegistration": str(not identity["self_registration"]).lower(),
         "HostedUIDomainPrefix": identity.get("hosted_ui_domain_prefix", ""),
     }

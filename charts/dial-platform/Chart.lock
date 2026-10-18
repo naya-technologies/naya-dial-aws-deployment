@@ -29,6 +29,12 @@ dependencies:
 - name: dial-extension
   repository: https://d2w6p7i2gnitgl.cloudfront.net/helm
   version: 2.1.0
+- name: dial-extension
+  repository: https://d2w6p7i2gnitgl.cloudfront.net/helm
+  version: 2.1.0
+- name: dial-extension
+  repository: https://d2w6p7i2gnitgl.cloudfront.net/helm
+  version: 2.1.0
 - name: influxdb2
   repository: https://d2w6p7i2gnitgl.cloudfront.net/helm
   version: 2.1.2

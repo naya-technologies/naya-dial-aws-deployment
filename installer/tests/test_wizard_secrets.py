@@ -64,7 +64,7 @@ class WizardTests(Base):
 
     def test_existing_vpc_saml_custom_hosts(self):
         hosts = ["h-chat.example.org", "h-admin.example.org", "h-core.example.org", "h-themes.example.org",
-                 "h-grafana.example.org", "h-superset.example.org"]
+                 "h-grafana.example.org", "h-superset.example.org", "h-flows.example.org", "h-flows-core.example.org"]
         answers = self.run_wizard([
             "corp", "us-east-1", "", "example.org", "n", *hosts, CERT,
             "2", "vpc-0123456789abcdef0", "subnet-0a1,subnet-0b2", "subnet-0c3,subnet-0d4",

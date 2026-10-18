@@ -74,6 +74,14 @@ application_types:
     append_properties_header: false
     assistant_attachments: false
 
+  - id: https://FlowBuilder
+    display_name: Flow Builder
+    component: flows-core
+    deployment: flow-builder
+    configuration_endpoint: false
+    append_properties_header: true
+    assistant_attachments: false
+
 # Names DIAL Admin shows for the adapters (one per component that serves models). Core has no such setting.
 adapters:
   bedrock:

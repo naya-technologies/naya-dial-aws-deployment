@@ -80,6 +80,7 @@ REQUIRED_KEYS: tuple[SecretKey, ...] = (
     SecretKey("influxdb_password", "b64_32", "InfluxDB admin password"),
     SecretKey("influxdb_token", "hex32", "InfluxDB API token"),
     SecretKey("grafana_admin_password", "grafana", "Grafana admin password (min 12 chars)"),
+    SecretKey("flows_session_secret", "b64_48", "Flow Builder sign-in session secret"),
 )
 
 
