@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from . import __version__, checks, cilium as cilium_mod, config, deploy, infra, mirror, modules as modules_mod, releases, uninstall as uninstall_mod
+from . import __version__, adapters, checks, cilium as cilium_mod, config, deploy, infra, mirror, modules as modules_mod, releases, uninstall as uninstall_mod
 from .bootstrap import Bootstrap
 from .cloud import Cloud
 from .context import Context
@@ -252,6 +252,7 @@ def _verify_and_report(ctx: Context, say: Say) -> None:
     deploy.finish_license_installer(ctx, say)
     deploy.ensure_api_key_license(ctx, say)
     pending = deploy.wait_until_ready(ctx, say)
+    adapters.name_adapters(ctx, say, deploy.chart_defaults(ctx))
     # The Istio gateway's load balancer is created by the AWS Load Balancer Controller, which is part of the chart.
     Bootstrap(ctx, say).knative_private_dns()
     if pending:

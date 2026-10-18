@@ -6,6 +6,8 @@
   application `managed-model-chat` (served by QuickApps). The chart did not register it, and the chat UI was not told its id. Now
   DIAL Core loads it from its own ConfigMap-backed file (`/mnt/system-config/managed-model-chat.json`, listed in
   `aidial.config.files`), so configuration exported by DIAL Admin cannot drop it, and `APP_MANAGED_CHAT_APPLICATION_ID` of chat names it.
+- The only model name left in the chart, `PY_INTERPRETER_ADDITIONAL_HANDLING_MODEL` of QuickApps, now names `default.model`
+  (it named a model that DIAL Core does not register).
 - No infrastructure change; images unchanged from 2026.10.3.
 
 ## 2026.10.3

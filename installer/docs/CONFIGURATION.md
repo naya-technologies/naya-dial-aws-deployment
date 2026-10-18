@@ -48,7 +48,7 @@ Changing `name`, the VPC or the region of an installed environment is not suppor
 
 ## Models
 
-DIAL registers one model, with the stable id **`default.model`** and the display name **AWS Private Bedrock**. Every
+DIAL registers one model, with the stable id **`default.model`** and the display name **System Default Model**, served by an adapter that DIAL Admin shows as **AWS Private Bedrock**. Every
 component refers to that id; which Bedrock model answers is decided only by its endpoint, so you can change the model
 in one place without touching anything else.
 
@@ -64,6 +64,9 @@ The model is defined in `installer.yaml` under `models:`
 The endpoint DIAL calls is `.../openai/deployments/<inference_profile>.<bedrock_model_id>/chat/completions`.
 With the shipped defaults that is `global.anthropic.claude-sonnet-5-5`. Enable access to that model in the Amazon Bedrock
 console of your account and region; the adapter's IAM role already allows Bedrock.
+
+The adapter name is the `adapters:` section of `installer.yaml` (`bedrock.display_name`). DIAL Core has no such setting: the
+installer sets it in DIAL Admin after the workloads are ready (a warning, never an error, if that step fails).
 
 To use another model, change `bedrock_model_id` (and `inference_profile` if needed) and run `./dial-install upgrade`.
 

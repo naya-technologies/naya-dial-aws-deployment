@@ -95,10 +95,10 @@ def helm_upgrade(ctx: Context, say: Callable[[str], None]) -> None:
         os.fchmod(handle, 0o600)                       # the file contains secrets
         with os.fdopen(handle, "w", encoding="utf-8") as stream:
             yaml.safe_dump(document, stream, default_flow_style=False, allow_unicode=True)
-        say(f"  helm upgrade --install {release['name']} (chart {version})")
+        say(f"  helm upgrade --install {release['name']} (chart {version or 'local ' + repository})")
         ctx.cloud.helm(
             "upgrade", "--install", release["name"], repository,
-            "--version", version,
+            *(["--version", version] if version else []),             # a local chart directory has no version to pin
             "--namespace", release["namespace"], "--create-namespace",
             "--values", path,
             "--timeout", "15m",

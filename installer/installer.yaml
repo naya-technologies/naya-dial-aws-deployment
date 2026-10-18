@@ -54,7 +54,12 @@ tools:
 #   none    no prefix: `bedrock_model_id` is used exactly as written
 models:
   - key: default.model
-    display_name: AWS Private Bedrock
+    display_name: System Default Model
     icon: anthropic.svg
     bedrock_model_id: anthropic.claude-sonnet-5-5
     inference_profile: global
+
+# Names DIAL Admin shows for the adapters (one per component that serves models). Core has no such setting.
+adapters:
+  bedrock:
+    display_name: AWS Private Bedrock

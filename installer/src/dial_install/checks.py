@@ -96,6 +96,11 @@ def chart_findings(ctx: Context) -> list[Finding]:
     """Can this account pull the platform chart from the Marketplace registry?"""
     from . import deploy
     repository, version = deploy.chart_ref(ctx)
+    if ctx.cache.get("local_chart"):                      # vendor test of a chart that is not published yet
+        result = ctx.cloud.runner.run(["helm", "show", "chart", repository], check=False)
+        if result.returncode != 0:
+            return [fail("chart", f"cannot read the local chart {repository}", result.stderr.strip())]
+        return [ok("chart", f"local chart {repository} (not from the registry)")]
     try:
         deploy.registry_login(ctx.cloud, repository)
     except Exception as error:  # noqa: BLE001 - any failure here means "cannot pull"

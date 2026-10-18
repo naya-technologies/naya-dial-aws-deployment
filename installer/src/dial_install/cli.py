@@ -38,6 +38,7 @@ def _parser() -> argparse.ArgumentParser:
     common(apply)
     apply.add_argument("-y", "--yes", action="store_true", help="do not ask for confirmation")
     apply.add_argument("--dry-run", action="store_true", help="print the commands instead of running them")
+    apply.add_argument("--chart", help="vendor: install from a local chart directory (with release.yaml) to test it before publishing")
     apply.add_argument("--allow-missing-images", type=int, default=0, metavar="N",
                        help="continue when up to N images cannot be copied (default 0); the affected components stay down")
 
@@ -45,6 +46,7 @@ def _parser() -> argparse.ArgumentParser:
     common(upgrade)
     upgrade.add_argument("-y", "--yes", action="store_true", help="do not ask for confirmation")
     upgrade.add_argument("--dry-run", action="store_true", help="print the commands instead of running them")
+    upgrade.add_argument("--chart", help="vendor: upgrade to a local chart directory (with release.yaml) to test it before publishing")
     upgrade.add_argument("--with-infra", action="store_true",
                          help="also update the CloudFormation stacks (needed when a release changes infrastructure)")
 

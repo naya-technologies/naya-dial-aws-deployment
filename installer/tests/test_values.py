@@ -239,7 +239,7 @@ class BuiltValuesTests(Base):
         config_json = json.loads(self.built["dial"]["core"]["secrets"]["aidial.config.json"])
         self.assertEqual(list(config_json["models"]), ["default.model"])
         model = config_json["models"]["default.model"]
-        self.assertEqual(model["displayName"], "AWS Private Bedrock")
+        self.assertEqual(model["displayName"], "System Default Model")
         # the global inference profile is used even though the region is us-east-1
         self.assertIn("/openai/deployments/global.anthropic.claude-sonnet-5-5/chat/completions", model["endpoint"])
         self.assertEqual(list(config_json["keys"]), [self.ctx.secret["core_admin_api_key"]])

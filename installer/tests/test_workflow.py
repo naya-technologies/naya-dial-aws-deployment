@@ -522,6 +522,66 @@ class LicenseStoreTests(Base):
         self.assertLess(body.index("ensure_api_key_license"), body.index("wait_until_ready"))
 
 
+class LocalChartTests(Base):
+    """`--chart <dir>` (vendor) installs a chart that is not published yet, so a release is tested before it is published."""
+
+    def test_helm_gets_the_directory_and_no_version(self):
+        from helpers import make_ctx
+        ctx = make_ctx(responses={("helm", "show", "values"): Result(0, CHART_VALUES_TEXT)})
+        ctx.cache["local_chart"] = Path("/charts/dial-platform")
+        deploy.helm_upgrade(ctx, lambda _m: None)
+        call = next(w for w in ctx.cloud.runner.writes if w[0] == "helm" and "upgrade" in w)
+        self.assertIn("/charts/dial-platform", call)
+        self.assertNotIn("--version", call)
+        self.assertNotIn("--wait", call)
+
+
+class AdapterNamesTests(Base):
+    """DIAL Admin names its adapters with a UUID; the installer gives them the display name from installer.yaml."""
+
+    def run_step(self, wait_fails=False):
+        from helpers import make_ctx
+        ctx = make_ctx(responses={("helm", "show", "values"): Result(0, CHART_VALUES_TEXT)})
+        if wait_fails:
+            ctx.cloud.runner.responses[("kubectl", "--context", ctx.cloud.kube_context, "-n", "dial", "wait")] = Result(1, "", "timed out")
+        messages = []
+        from dial_install import adapters
+        adapters.name_adapters(ctx, messages.append, deploy.chart_defaults(ctx))
+        return ctx.cloud.runner, messages
+
+    def test_the_bedrock_adapter_gets_its_display_name(self):
+        runner, _ = self.run_step()
+        run = next(w for w in runner.writes if "run" in w and "dial-adapter-names" in w)
+        overrides = json.loads(run[run.index("--overrides") + 1])
+        env = {e["name"]: e["value"] for e in overrides["spec"]["containers"][0]["env"]}
+        self.assertEqual(json.loads(env["WANT"]),
+                         {"http://dial-bedrock.dial.svc.cluster.local/openai/deployments/": "AWS Private Bedrock"})
+        self.assertEqual(env["ADMIN_URL"], "http://dial-admin-backend.dial.svc.cluster.local")
+        self.assertNotIn("--rm", run)                                   # never attach to a pod that exits at once
+        self.assertTrue(any("wait" in w and "pod/dial-adapter-names" in w for w in runner.writes))
+
+    def test_no_secret_is_passed_on_the_command_line(self):
+        runner, _ = self.run_step()
+        run = " ".join(next(w for w in runner.writes if "run" in w and "dial-adapter-names" in w))
+        self.assertIn("/mnt/core/aidial.config.json", run)              # the key is read from Core's own Secret
+        self.assertNotIn("Api-Key:", run.replace('"Api-Key": key', ""))
+
+    def test_the_script_follows_the_admin_api_contract(self):
+        from dial_install import adapters
+        self.assertIn("If-Match", adapters._SCRIPT)             # PUT needs the current ETag
+        self.assertIn("If-None-Match", adapters._SCRIPT)        # GET of one adapter needs this header
+        self.assertIn("/api/v1/adapters", adapters._SCRIPT)
+
+    def test_a_failure_is_only_a_warning(self):
+        _, messages = self.run_step(wait_fails=True)
+        self.assertTrue(any("warning" in m and "adapter" in m for m in messages), messages)
+
+    def test_it_runs_after_the_workloads_are_ready(self):
+        text = Path(workflow.__file__).read_text(encoding="utf-8")
+        body = text[text.index("def _verify_and_report"):]
+        self.assertLess(body.index("wait_until_ready"), body.index("name_adapters"))
+
+
 class MirrorCommandTests(Base):
     """`mirror` copies only the images, so it can run in CloudShell while the infrastructure is being built."""
 
