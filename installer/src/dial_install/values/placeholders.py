@@ -53,6 +53,7 @@ def _core_config(ctx: Context) -> str:
             "iconUrl": f"https://{themes}/{model['icon']}",
             "endpoint": f"{_service_url(ctx, 'bedrock')}/openai/deployments/{_bedrock_deployment(model, ctx.region)}/chat/completions",
             **({"features": model["features"]} if model.get("features") else {}),
+            **({"descriptionKeywords": model["topics"]} if model.get("topics") else {}),     # DIAL Admin calls them topics
         }
         for model in ctx.release["models"]
     }

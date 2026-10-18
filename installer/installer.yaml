@@ -52,6 +52,7 @@ tools:
 #   auto    derived from the AWS region (us / eu / apac, otherwise global)   [default]
 #   us | eu | apac | global   always that profile
 #   none    no prefix: `bedrock_model_id` is used exactly as written
+# topics - optional topics of the model; `hidden` keeps it out of the model list and the catalog of the chat UI.
 # features - optional Core model features (for example `temperatureSupported: false`), passed to DIAL Core as they are.
 models:
   - key: default.model
@@ -59,6 +60,7 @@ models:
     icon: anthropic.svg
     bedrock_model_id: anthropic.claude-sonnet-5-5
     inference_profile: global
+    topics: [hidden]                  # `hidden`: the chat UI and the catalog do not list it (it is the default model)
     features:
       temperatureSupported: false     # Claude Sonnet 5 rejects the `temperature` parameter; the chat UI then does not send it
 

@@ -12,6 +12,8 @@
   parameter (HTTP 400), and the chat UI sends it unless the model says it is not supported.
 - **DIAL Admin no longer shows models as OUT OF SYNC.** `CORE_CONFIG_VERSION` of admin-backend was `0.39.2` while dial-core
   is `0.45.7`; Admin read Core's state in the old schema, so it never matched what Admin exported. It is now `0.45.7`.
+- The installer registers the default model with the topic `hidden` (Core: `descriptionKeywords`), so the chat UI and the catalog do not
+  list it.
 - No infrastructure change; images unchanged from 2026.10.3.
 
 ## 2026.10.3

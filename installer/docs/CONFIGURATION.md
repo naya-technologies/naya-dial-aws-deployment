@@ -59,6 +59,7 @@ The model is defined in `installer.yaml` under `models:`
 | `key` | The model id inside DIAL. Keep `default.model`. |
 | `display_name` | Name shown to users. |
 | `bedrock_model_id` | The Bedrock model, without the inference-profile prefix (for example `anthropic.claude-sonnet-5-5`). |
+| `topics` | Optional topics (DIAL Core calls them `descriptionKeywords`). `hidden` keeps the model out of the model list and the catalog of the chat UI; it still works when named directly. The default model is hidden. |
 | `features` | Optional DIAL Core model features, for example `temperatureSupported: false` (the default model needs it: Claude Sonnet 5 rejects the `temperature` parameter, and the chat UI then does not send it). |
 | `inference_profile` | `global`, `us`, `eu`, `apac`, `auto` (from the region) or `none` (use `bedrock_model_id` exactly as written). Default `auto`. |
 

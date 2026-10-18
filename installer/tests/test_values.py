@@ -244,6 +244,7 @@ class BuiltValuesTests(Base):
         self.assertIn("/openai/deployments/global.anthropic.claude-sonnet-5-5/chat/completions", model["endpoint"])
         # Claude Sonnet 5 answers "`temperature` is deprecated for this model" (HTTP 400), so the UI must not send it
         self.assertEqual(model["features"], {"temperatureSupported": False})
+        self.assertEqual(model["descriptionKeywords"], ["hidden"])      # the chat UI does not list the default model
         self.assertEqual(list(config_json["keys"]), [self.ctx.secret["core_admin_api_key"]])
 
     def test_inference_profile_auto_follows_the_region(self):
