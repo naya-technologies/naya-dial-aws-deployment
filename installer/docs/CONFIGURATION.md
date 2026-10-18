@@ -59,6 +59,7 @@ The model is defined in `installer.yaml` under `models:`
 | `key` | The model id inside DIAL. Keep `default.model`. |
 | `display_name` | Name shown to users. |
 | `bedrock_model_id` | The Bedrock model, without the inference-profile prefix (for example `anthropic.claude-sonnet-5-5`). |
+| `features` | Optional DIAL Core model features, for example `temperatureSupported: false` (the default model needs it: Claude Sonnet 5 rejects the `temperature` parameter, and the chat UI then does not send it). |
 | `inference_profile` | `global`, `us`, `eu`, `apac`, `auto` (from the region) or `none` (use `bedrock_model_id` exactly as written). Default `auto`. |
 
 The endpoint DIAL calls is `.../openai/deployments/<inference_profile>.<bedrock_model_id>/chat/completions`.

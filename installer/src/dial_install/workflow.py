@@ -321,7 +321,8 @@ def cmd_upgrade(options: Options, runner: Runner, say: Say, ask: Callable[[str],
     notes = (ctx.release.get("notes") or "").strip()
     if notes:
         say("\nRelease notes:\n" + "\n".join("  " + line for line in notes.splitlines()))
-    if current and current["chart"].endswith(target) and not changes:
+    # A local chart (vendor test) keeps its version while its content changes, so it is always installed.
+    if current and current["chart"].endswith(target) and not changes and not ctx.cache.get("local_chart"):
         say("\nAlready up to date. Nothing to do.")
         return 0
     if changes:

@@ -242,6 +242,8 @@ class BuiltValuesTests(Base):
         self.assertEqual(model["displayName"], "System Default Model")
         # the global inference profile is used even though the region is us-east-1
         self.assertIn("/openai/deployments/global.anthropic.claude-sonnet-5-5/chat/completions", model["endpoint"])
+        # Claude Sonnet 5 answers "`temperature` is deprecated for this model" (HTTP 400), so the UI must not send it
+        self.assertEqual(model["features"], {"temperatureSupported": False})
         self.assertEqual(list(config_json["keys"]), [self.ctx.secret["core_admin_api_key"]])
 
     def test_inference_profile_auto_follows_the_region(self):
@@ -338,6 +340,14 @@ class RealHelmTests(Base):
         self.assertIn("/mnt/system-config/managed-model-chat.json", files)
         self.assertIn("/mnt/system-config", [m["mountPath"] for m in spec["containers"][0]["volumeMounts"]])
         self.assertIn("managed-model-chat", [v["name"] for v in spec["volumes"]])
+
+    def test_admin_reads_core_in_the_schema_version_of_the_core_image(self):
+        """Admin shows every model as OUT OF SYNC when CORE_CONFIG_VERSION is older than the dial-core it manages."""
+        core_server_version = {"2026.10.2": "0.45.7"}                 # dial-core image tag -> server (config schema) version
+        tag = CHART_VALUES["dial"]["core"]["image"]["tag"]
+        self.assertIn(tag, core_server_version, f"dial-core {tag}: add its server version to this table")
+        env = CHART_VALUES["admin"]["backend"]["env"]
+        self.assertEqual(env["CORE_CONFIG_VERSION"], core_server_version[tag])
 
     def test_platform_chart_lints_with_generated_values(self):
         path = self.write_values(values.build(make_ctx(), CHART_VALUES))

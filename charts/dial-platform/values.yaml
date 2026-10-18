@@ -496,7 +496,10 @@ admin:
     terminationGracePeriodSeconds: ''
     lifecycleHooks: {}
     env:
-      CORE_CONFIG_VERSION: "0.39.2"
+      # Version of DIAL Core's configuration schema = the server version inside the dial-core image of this chart
+      # (2026.10.2 -> 0.45.7). With an older value DIAL Admin reads Core's state in the old schema and shows every
+      # model as OUT OF SYNC. Change it together with the dial-core image tag (a test checks the pair).
+      CORE_CONFIG_VERSION: "0.45.7"
       CORE_CLIENT_URL: "http://{{ .Release.Name }}-core.{{ .Release.Namespace }}.svc.cluster.local"
       PLUGINS_DEPLOYMENT_MANAGER_CLIENT_URL: "http://dial-deployment-manager.{{ .Release.Namespace }}.svc.cluster.local"
       ENABLE_PLUGINS_DEPLOYMENT_MANAGER_ENDPOINT_REFRESH: 'PLACEHOLDER_DEPLOYMENT_MANAGER_ENABLED'

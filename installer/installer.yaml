@@ -52,12 +52,15 @@ tools:
 #   auto    derived from the AWS region (us / eu / apac, otherwise global)   [default]
 #   us | eu | apac | global   always that profile
 #   none    no prefix: `bedrock_model_id` is used exactly as written
+# features - optional Core model features (for example `temperatureSupported: false`), passed to DIAL Core as they are.
 models:
   - key: default.model
     display_name: System Default Model
     icon: anthropic.svg
     bedrock_model_id: anthropic.claude-sonnet-5-5
     inference_profile: global
+    features:
+      temperatureSupported: false     # Claude Sonnet 5 rejects the `temperature` parameter; the chat UI then does not send it
 
 # Names DIAL Admin shows for the adapters (one per component that serves models). Core has no such setting.
 adapters:

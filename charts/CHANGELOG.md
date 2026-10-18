@@ -8,6 +8,10 @@
   `aidial.config.files`), so configuration exported by DIAL Admin cannot drop it, and `APP_MANAGED_CHAT_APPLICATION_ID` of chat names it.
 - The only model name left in the chart, `PY_INTERPRETER_ADDITIONAL_HANDLING_MODEL` of QuickApps, now names `default.model`
   (it named a model that DIAL Core does not register).
+- The installer registers the default model with `temperatureSupported: false`: Claude Sonnet 5 on Bedrock rejects the `temperature`
+  parameter (HTTP 400), and the chat UI sends it unless the model says it is not supported.
+- **DIAL Admin no longer shows models as OUT OF SYNC.** `CORE_CONFIG_VERSION` of admin-backend was `0.39.2` while dial-core
+  is `0.45.7`; Admin read Core's state in the old schema, so it never matched what Admin exported. It is now `0.45.7`.
 - No infrastructure change; images unchanged from 2026.10.3.
 
 ## 2026.10.3

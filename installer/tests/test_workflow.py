@@ -536,6 +536,12 @@ class LocalChartTests(Base):
         self.assertNotIn("--wait", call)
 
 
+    def test_a_local_chart_is_installed_even_when_its_version_is_unchanged(self):
+        text = Path(workflow.__file__).read_text(encoding="utf-8")
+        body = text[text.index("def cmd_upgrade"):text.index("Already up to date")]
+        self.assertIn('ctx.cache.get("local_chart")', body)
+
+
 class AdapterNamesTests(Base):
     """DIAL Admin names its adapters with a UUID; the installer gives them the display name from installer.yaml."""
 

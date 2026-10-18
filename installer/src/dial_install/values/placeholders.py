@@ -52,6 +52,7 @@ def _core_config(ctx: Context) -> str:
             "displayName": model["display_name"],
             "iconUrl": f"https://{themes}/{model['icon']}",
             "endpoint": f"{_service_url(ctx, 'bedrock')}/openai/deployments/{_bedrock_deployment(model, ctx.region)}/chat/completions",
+            **({"features": model["features"]} if model.get("features") else {}),
         }
         for model in ctx.release["models"]
     }
