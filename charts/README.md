@@ -2,11 +2,46 @@
 
 | Chart | Installed by | Purpose |
 |---|---|---|
-| `dial-platform` (published as `naya-helm-deployment`) | `dial-install` from the AWS Marketplace registry | Everything DIAL runs: Core, Chat, Admin, Themes, Bedrock adapter, RAG, QuickApps, App Controller, Deployment Manager, analytics (InfluxDB, Grafana, Superset), load balancer controller, license installer |
+| `dial-platform` (published as `naya-helm-deployment`) | `dial-install` from the AWS Marketplace registry | Everything DIAL runs: Core, Chat, Admin, Themes, Bedrock adapter, QuickApps, App Controller, Deployment Manager, analytics (InfluxDB, Grafana, Superset), load balancer controller, license installer |
 | `dial-cluster-base` | `dial-install` from inside the installer package | Cluster prerequisites: namespace, gp3 storage class, App Controller permissions, load balancer controller CRDs |
 
 Cluster add-ons that come from upstream (Cluster Autoscaler, Knative, Istio) are installed by the installer at the
 versions pinned in the release manifest; they are not repackaged here.
+
+## Why two charts
+
+DIAL is installed as **two Helm releases, on purpose**. The rule: what belongs to the cluster and outlives DIAL goes in
+`dial-cluster-base`; everything DIAL itself runs goes in `dial-platform`.
+
+| | `dial-cluster-base` | `dial-platform` |
+|---|---|---|
+| Contents | Namespace, gp3 StorageClass, App Controller Role/RoleBinding, load balancer controller CRDs | Every DIAL component, ingresses, analytics, license installer |
+| Lifetime | Long. Resources carry `helm.sh/resource-policy: keep`. | Short. Upgraded, rolled back, even removed and reinstalled. |
+| Shipped | Inside the installer package | Marketplace registry, validated by AWS with its default values |
+| Installed | First, before Knative/Istio and DIAL | After the cluster base and the add-ons exist |
+
+Why this is the right design:
+
+1. **Ordering.** Helm cannot wait mid-release between CRDs/namespace and the objects that use them. The platform's `Ingress`
+   objects need the load balancer CRDs and controller first, and the platform needs its namespace and StorageClass before any
+   pod starts. Two releases give a guaranteed order: prerequisites, then the application.
+2. **Data safety.** The namespace holds the volumes. If the platform release were rolled back or uninstalled in a single-release
+   design, the namespace and CRDs would go with it, and with them every Ingress and volume claim. With two releases, rolling
+   back DIAL can never remove the foundation.
+3. **Marketplace constraints.** AWS validates and deploys the platform chart with its default values, so it should contain only
+   the product. Cluster-level objects differ between clusters (an existing default StorageClass must not be taken over; the
+   installer detects it and sets `STORAGE_CLASS_IS_DEFAULT`).
+4. **Different rate of change.** The product changes every release and the prerequisites almost never do, so release diffs stay
+   small and reviewable.
+5. **Transparency.** Anyone auditing the cluster reads `dial-cluster-base` (four small templates) and sees exactly what DIAL asks
+   of the cluster outside its own namespace.
+
+What not to do: do not move a prerequisite into `dial-platform` because it is easier, and do not put product components into the
+base chart. If an object is cluster-scoped, shared with other workloads, or must survive an uninstall of DIAL, it belongs in the
+base chart; otherwise it belongs in the platform chart.
+
+Upstream add-ons (Cluster Autoscaler, Knative, Istio, Cilium) are a third category: they are not repackaged; the installer applies
+the upstream release pinned in the release manifest.
 
 ## The placeholder rule
 
@@ -60,11 +95,3 @@ every referenced repository and tag exists.
 3. `make test` (runs `helm lint`, renders both charts with the generated values, and fails if a placeholder is
    left, undeclared, unfilled, or if the embedded manifest differs from `installer/releases/<id>.yaml`).
 4. `make package`, then `make push REGISTRY=...` and tag the release in AWS Marketplace.
-
-## Changes relative to the previous chart (`platform/base/chart`)
-
-New tokens: `ALB_SCHEME`, `ALB_SUBNETS`, `ALB_GROUP_NAME` (one load balancer for all host names),
-`CORE_CONFIG_JSON`, `ANALYTICS_ENABLED`, `DEPLOYMENT_MANAGER_ENABLED`.
-Added to the chart (they used to be injected by the old installer): `global.region`, `albcontroller.enabled`,
-`aidial.managedSecrets.*`, `rag.updateStrategy`, `dial.bedrock.serviceAccount.name`.
-Images are no longer overridden by the installer; every image reference stays in the chart.
