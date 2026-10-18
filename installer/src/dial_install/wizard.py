@@ -82,7 +82,10 @@ class Wizard:
 
         domain: dict = {"base": self.text("Base domain (chat., admin., core. ... are created under it)",
                                           pattern=r"[a-z0-9.-]+\.[a-z]{2,}", hint="Example: dial.example.com")}
-        if self.yes_no("Use different host names than chat.<domain>, admin.<domain> ...?", False):
+        say("\nEvery service gets its own host name (the DNS records you create later). Proposed:")
+        for service in SERVICES:
+            say(f"  {service:<9} {service}.{domain['base']}")
+        if not self.yes_no("Keep these host names?", True):
             hosts = {}
             for service in SERVICES:
                 hosts[service] = self.text(f"Host name for {service}", f"{service}.{domain['base']}")

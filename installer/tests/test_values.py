@@ -247,6 +247,18 @@ class BuiltValuesTests(Base):
         self.assertEqual(model["descriptionKeywords"], ["hidden"])      # the chat UI does not list the default model
         self.assertEqual(list(config_json["keys"]), [self.ctx.secret["core_admin_api_key"]])
 
+    def test_core_offers_the_agent_builder_application_type(self):
+        config_json = json.loads(self.built["dial"]["core"]["secrets"]["aidial.config.json"])
+        schema, = config_json["applicationTypeSchemas"]
+        self.assertEqual(schema["$id"], "https://mydial.epam.com/custom_application_schemas/quickapps2")
+        self.assertEqual(schema["dial:applicationTypeDisplayName"], "Agent Builder")
+        base = "http://dial-quickapps.dial.svc.cluster.local"
+        self.assertEqual(schema["dial:applicationTypeCompletionEndpoint"], f"{base}/openai/deployments/quick_apps2/chat/completions")
+        self.assertEqual(schema["dial:applicationTypeConfigurationEndpoint"], f"{base}/openai/deployments/quick_apps2/configuration")
+        self.assertEqual(schema["dial:applicationTypeSchemaEndpoint"], f"{base}/v1/configuration-support/application-schema")
+        self.assertIs(schema["dial:appendApplicationPropertiesHeader"], False)
+        self.assertIs(schema["dial:applicationTypeAssistantAttachmentsInRequestSupported"], False)
+
     def test_inference_profile_auto_follows_the_region(self):
         base = {"key": "m", "display_name": "M", "icon": "a.svg", "bedrock_model_id": "anthropic.x"}
         endpoint = self.models(models=[{**base, "inference_profile": "auto"}])["m"]["endpoint"]

@@ -232,7 +232,7 @@ def _install_platform(ctx: Context, say: Say) -> None:
     Bootstrap(ctx, say).run()
     _before_helm(ctx, say)
     deploy.helm_upgrade(ctx, say)
-    _verify_and_report(ctx, say)
+    _verify_and_report(ctx, say, first_install=True)
 
 
 def _before_platform(ctx: Context, say: Say) -> None:
@@ -248,7 +248,7 @@ def _before_helm(ctx: Context, say: Say) -> None:
             module.before_helm(ctx, say)
 
 
-def _verify_and_report(ctx: Context, say: Say) -> None:
+def _verify_and_report(ctx: Context, say: Say, *, first_install: bool = False) -> None:
     # The license is prepared first: DIAL Core does not start without it, so waiting for it earlier only burns time.
     deploy.finish_license_installer(ctx, say)
     deploy.ensure_api_key_license(ctx, say)
@@ -264,6 +264,29 @@ def _verify_and_report(ctx: Context, say: Say) -> None:
         )
     say("\nDIAL is installed.")
     _print_dns(ctx, say)
+    if first_install:
+        _print_first_user(ctx, say)
+
+
+def _print_first_user(ctx: Context, say: Say) -> None:
+    """Nobody can sign in until the first user exists; the installer does not create users."""
+    if ctx.cloud.runner.dry_run:
+        return
+    if ctx.cfg["identity"]["provider"] != "cognito":
+        say("\nSigning in: users sign in through your identity provider. Map its administrator group to the group name `admin`.")
+        return
+    pool = ctx.outputs["identity"]["UserPoolId"]
+    region = ctx.region
+    say(f"""
+IMPORTANT - create the first user. Nobody can sign in until you do (DIAL does not create users for you):
+  1. AWS console > Amazon Cognito > User pools > the pool "{pool}" > Users > Create user.
+     Use an e-mail address as the user name; Cognito e-mails a temporary password.
+  2. Groups > Create group named "admin", then add the user to it. Members of "admin" are the DIAL administrators.
+Or from CloudShell:
+  aws cognito-idp admin-create-user --user-pool-id {pool} --region {region} --username <email> \\
+      --user-attributes Name=email,Value=<email> Name=email_verified,Value=true
+  aws cognito-idp create-group --user-pool-id {pool} --region {region} --group-name admin
+  aws cognito-idp admin-add-user-to-group --user-pool-id {pool} --region {region} --username <email> --group-name admin""")
 
 
 def _print_dns(ctx: Context, say: Say) -> None:

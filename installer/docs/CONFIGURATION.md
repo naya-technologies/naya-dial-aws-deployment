@@ -72,6 +72,14 @@ installer sets it in DIAL Admin after the workloads are ready (a warning, never 
 
 To use another model, change `bedrock_model_id` (and `inference_profile` if needed) and run `./dial-install upgrade`.
 
+## Application types (Agent Builder)
+
+DIAL Core offers application types (application runners) that people use to create applications. The installer registers them in
+`installer.yaml` under `application_types:`. Today there is one, **Agent Builder** (QuickApps, id
+`https://mydial.epam.com/custom_application_schemas/quickapps2`); its display name, endpoints and options are generated from the
+entry (`display_name`, `component`, `deployment`, `configuration_endpoint`, `append_properties_header`, `assistant_attachments`).
+Change `display_name` and run `./dial-install upgrade` to rename it. Keep the `id`: existing applications refer to it.
+
 ## Cilium (overlay network)
 
 ```

@@ -44,6 +44,27 @@ def _bedrock_deployment(model: dict, region: str) -> str:
     return model["bedrock_model_id"] if profile == "none" else f"{profile}.{model['bedrock_model_id']}"
 
 
+def _application_type_schemas(ctx: Context) -> list[dict]:
+    """The application types Core offers (Agent Builder ...): one JSON schema each, pointing at the service that runs them."""
+    schemas = []
+    for kind in ctx.release.get("application_types", []):
+        base = _service_url(ctx, kind["component"])
+        deployment = f"{base}/openai/deployments/{kind['deployment']}"
+        schema = {
+            "$schema": "https://dial.epam.com/application_type_schemas/schema#",
+            "$id": kind["id"],
+            "dial:applicationTypeDisplayName": kind["display_name"],
+            "dial:applicationTypeCompletionEndpoint": f"{deployment}/chat/completions",
+            **({"dial:applicationTypeConfigurationEndpoint": f"{deployment}/configuration"} if kind.get("configuration_endpoint") else {}),
+            "dial:applicationTypeSchemaEndpoint": f"{base}/v1/configuration-support/application-schema",
+            "dial:appendApplicationPropertiesHeader": kind.get("append_properties_header", False),
+            "dial:applicationTypeInterceptors": [],
+            "dial:applicationTypeAssistantAttachmentsInRequestSupported": kind.get("assistant_attachments", False),
+        }
+        schemas.append(schema)
+    return schemas
+
+
 def _core_config(ctx: Context) -> str:
     themes = ctx.cfg["domain"]["hosts"]["themes"]
     models = {
@@ -60,6 +81,7 @@ def _core_config(ctx: Context) -> str:
     document = {
         "keys": {ctx.secret["core_admin_api_key"]: {"project": "DIAL Admin", "roles": ["admin"]}},
         "models": models,
+        "applicationTypeSchemas": _application_type_schemas(ctx),
         "roles": {"admin": {"limits": {}}, "default": {"limits": {}}},
     }
     return json.dumps(document, indent=2)

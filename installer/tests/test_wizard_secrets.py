@@ -53,7 +53,7 @@ class WizardTests(Base):
         return wizard.Wizard(ask=scripted(answers), say=lambda _m: None).run()
 
     def test_simple_flow(self):
-        answers = self.run_wizard(["acme", "us-east-1", "", "dial.acme.example", "n", CERT,
+        answers = self.run_wizard(["acme", "us-east-1", "", "dial.acme.example", "y", CERT,
                                    "1", "", "1", "", "1", "1", "y", "y", SECRET])
         text = wizard.render_config(answers)
         path = self.write(text)
@@ -66,7 +66,7 @@ class WizardTests(Base):
         hosts = ["h-chat.example.org", "h-admin.example.org", "h-core.example.org", "h-themes.example.org",
                  "h-grafana.example.org", "h-superset.example.org"]
         answers = self.run_wizard([
-            "corp", "us-east-1", "", "example.org", "y", *hosts, CERT,
+            "corp", "us-east-1", "", "example.org", "n", *hosts, CERT,
             "2", "vpc-0123456789abcdef0", "subnet-0a1,subnet-0b2", "subnet-0c3,subnet-0d4",
             "2", "10.0.0.0/8, 172.16.0.0/12",
             "2", "CorpIdP", "https://idp.example.org/metadata.xml", "y",
@@ -82,14 +82,14 @@ class WizardTests(Base):
         self.assertEqual(config.semantic_errors(cfg), [])
 
     def test_blank_secret_arn_leaves_a_todo_that_check_refuses(self):
-        answers = self.run_wizard(["acme", "us-east-1", "", "dial.acme.example", "n", CERT, "1", "", "1", "", "1", "1", "y", "y", ""])
+        answers = self.run_wizard(["acme", "us-east-1", "", "dial.acme.example", "y", CERT, "1", "", "1", "", "1", "1", "y", "y", ""])
         path = self.write(wizard.render_config(answers))
         with self.assertRaises(InstallerError) as raised:
             config.load(path)
         self.assertIn("secrets.arn", raised.exception.message)
 
     def test_reasks_on_bad_input(self):
-        answers = self.run_wizard(["BAD NAME", "acme", "us-east-1", "", "nodomain", "dial.acme.example", "n", "bad-arn", CERT,
+        answers = self.run_wizard(["BAD NAME", "acme", "us-east-1", "", "nodomain", "dial.acme.example", "y", "bad-arn", CERT,
                                    "1", "", "1", "", "9", "1", "1", "y", "y", SECRET])
         self.assertEqual(answers["name"], "acme")
         self.assertEqual(answers["domain"]["base"], "dial.acme.example")
@@ -107,7 +107,7 @@ class WizardTests(Base):
     def test_init_never_overwrites_config(self):
         with tempfile.TemporaryDirectory() as directory:
             (Path(directory) / "dial.yaml").write_text("keep me")
-            answers = self.run_wizard(["acme", "us-east-1", "", "dial.acme.example", "n", CERT, "1", "", "1", "", "1", "1", "y", "y", SECRET])
+            answers = self.run_wizard(["acme", "us-east-1", "", "dial.acme.example", "y", CERT, "1", "", "1", "", "1", "1", "y", "y", SECRET])
             with self.assertRaises(InstallerError):
                 wizard.write_outputs(answers, Path(directory), lambda _m: None)
             self.assertEqual((Path(directory) / "dial.yaml").read_text(), "keep me")

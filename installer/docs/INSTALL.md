@@ -48,7 +48,8 @@ already contains them and needs no internet access at all, only access to AWS.
 ```
 
 Answer the questions; press Enter to accept the value in brackets. You will be asked for the region, the domain, the
-certificate ARN, whether to create a new network or use an existing one, whether the application is internal or public,
+host name of every service (chat, admin, core, themes, grafana, superset: the proposal is `<service>.<your domain>`, and you can
+choose any other name for each one), the certificate ARN, whether to create a new network or use an existing one, whether the application is internal or public,
 and how users sign in. At the end it writes two files:
 
 - `dial.yaml` - your configuration. Safe to read and edit.
@@ -123,6 +124,9 @@ In your DNS, create a **CNAME** record for each line (in Route 53 you can use an
 You can print them again at any time: `./dial-install status`. DNS can take up to 30 minutes to appear.
 
 ## 8. First sign-in
+
+The installer ends with the message **"create the first user"** (it does not create users). Nobody can sign in until you do.
+
 
 1. Open `https://chat.<your domain>` and `https://admin.<your domain>`.
 2. With Cognito sign-in: AWS console -> Amazon Cognito -> your user pool -> create a user. To make that user an

@@ -64,6 +64,16 @@ models:
     features:
       temperatureSupported: false     # Claude Sonnet 5 rejects the `temperature` parameter; the chat UI then does not send it
 
+# Application types (application runners) registered in DIAL Core. `component` is the service that runs them.
+application_types:
+  - id: https://mydial.epam.com/custom_application_schemas/quickapps2
+    display_name: Agent Builder
+    component: quickapps
+    deployment: quick_apps2
+    configuration_endpoint: true
+    append_properties_header: false
+    assistant_attachments: false
+
 # Names DIAL Admin shows for the adapters (one per component that serves models). Core has no such setting.
 adapters:
   bedrock:
