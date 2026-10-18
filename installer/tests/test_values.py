@@ -319,6 +319,26 @@ class RealHelmTests(Base):
         self.assertEqual(result.returncode, 0, result.stderr)
         return result.stdout, [d for d in yaml.safe_load_all(result.stdout) if d]
 
+    def test_chat_runs_conversations_through_a_registered_managed_chat_application(self):
+        """The chat UI sends every conversation with a model to the application named by APP_MANAGED_CHAT_APPLICATION_ID.
+        Without that application in Core the UI shows "Chat is unavailable"."""
+        _, docs = self.render_platform()
+        chat = next(d for d in docs if d["kind"] == "Deployment" and d["metadata"]["name"] == "dial-chat")
+        env = {e["name"]: e.get("value") for e in chat["spec"]["template"]["spec"]["containers"][0]["env"]}
+        app_id = env["APP_MANAGED_CHAT_APPLICATION_ID"]
+        self.assertTrue(app_id)
+        config_map = next(d for d in docs if d["kind"] == "ConfigMap" and d["metadata"]["name"] == "dial-managed-model-chat")
+        applications = json.loads(config_map["data"]["managed-model-chat.json"])["applications"]
+        self.assertEqual(list(applications), [app_id])
+        self.assertIn("-quickapps.", applications[app_id]["endpoint"])
+        core = next(d for d in docs if d["kind"] == "Deployment" and d["metadata"]["name"] == "dial-core")
+        spec = core["spec"]["template"]["spec"]
+        core_env = {e["name"]: e.get("value") for e in spec["containers"][0]["env"]}
+        files = json.loads(core_env["aidial.config.files"])
+        self.assertIn("/mnt/system-config/managed-model-chat.json", files)
+        self.assertIn("/mnt/system-config", [m["mountPath"] for m in spec["containers"][0]["volumeMounts"]])
+        self.assertIn("managed-model-chat", [v["name"] for v in spec["volumes"]])
+
     def test_platform_chart_lints_with_generated_values(self):
         path = self.write_values(values.build(make_ctx(), CHART_VALUES))
         result = self.helm("lint", str(PLATFORM_CHART), "-f", path)
@@ -446,7 +466,7 @@ if __name__ == "__main__":
 class MarketplaceListTests(Base):
     """The Marketplace requires every image the chart refers to in its delivery option, including components that are off by default."""
 
-    LIST = ROOT / "releases" / "2026.10.3-marketplace-uris.txt"
+    LIST = ROOT / "releases" / "2026.10.4-marketplace-uris.txt"
 
     def static_images(self):
         host = CHART_VALUES["installer"]["registry"].split("/")[0]
@@ -481,7 +501,7 @@ class MarketplaceListTests(Base):
 
     def test_the_list_holds_the_chart_and_nothing_that_is_unused(self):
         listed = self.listed()
-        self.assertTrue(listed[0].endswith("/naya-helm-deployment:2026.10.3"))
+        self.assertTrue(listed[0].endswith("/naya-helm-deployment:2026.10.4"))
         unused = set(listed[1:]) - self.static_images()
         self.assertEqual(unused, set(), "listed images that no values.yaml entry refers to")
 

@@ -111,7 +111,7 @@ dial:
       aidial.applications.controllerEndpoint: 'http://{{ .Release.Name }}-app-controller.{{ .Release.Namespace }}.svc.cluster.local:80'
       aidial.identityProviders.cognito.obfuscateUserEmail: "false"
       aidial.codeInterpreter.sessionImage: 709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-dial-code-interpreter:2026.10.1
-      aidial.config.files: '["/mnt/secrets-store/aidial.config.json"]'
+      aidial.config.files: '["/mnt/secrets-store/aidial.config.json", "/mnt/system-config/managed-model-chat.json"]'
       aidial.storage.provider: aws-s3
       aidial.managedSecrets.provider: aws
       aidial.managedSecrets.aws.region: 'PLACEHOLDER_AWS_REGION'
@@ -172,7 +172,37 @@ dial:
         memory: "2Gi"
     nodeSelector:
       workload: core
+    # The application the chat UI uses to run a conversation with a model (`APP_MANAGED_CHAT_APPLICATION_ID` of chat).
+    # It lives in its own file so that configuration exported by DIAL Admin (which owns aidial.config.json) never drops it.
+    extraDeploy:
+    - apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: '{{ .Release.Name }}-managed-model-chat'
+        namespace: '{{ .Release.Namespace }}'
+      data:
+        managed-model-chat.json: |
+          {
+            "applications": {
+              "managed-model-chat": {
+                "displayName": "Managed model chat",
+                "description": "Internal execution application for the model selected in chat.",
+                "userRoles": ["default", "user", "admin"],
+                "forwardAuthToken": true,
+                "inputAttachmentTypes": ["*/*"],
+                "features": {
+                  "assistantAttachmentsInRequestSupported": true,
+                  "urlAttachmentsSupported": true,
+                  "configurationEndpoint": "http://{{ .Release.Name }}-quickapps.{{ .Release.Namespace }}.svc.cluster.local/openai/deployments/managed-model-chat/configuration"
+                },
+                "endpoint": "http://{{ .Release.Name }}-quickapps.{{ .Release.Namespace }}.svc.cluster.local/openai/deployments/managed-model-chat/chat/completions"
+              }
+            }
+          }
     extraVolumes:
+    - name: managed-model-chat
+      configMap:
+        name: '{{ .Release.Name }}-managed-model-chat'
     - name: config
       secret:
         secretName: '{{ template "dialCore.names.fullname" . }}'
@@ -182,6 +212,9 @@ dial:
     - name: vector-data
       emptyDir: {}
     extraVolumeMounts:
+    - name: managed-model-chat
+      mountPath: /mnt/system-config
+      readOnly: true
     - name: config
       mountPath: /mnt/secrets-store
       readOnly: true
@@ -213,6 +246,7 @@ dial:
       tag: '2026.10.1'
     env:
       BFF_PORT: '3001'
+      APP_MANAGED_CHAT_APPLICATION_ID: managed-model-chat
       APP_DIAL_API_BASE: http://PLACEHOLDER_DIAL_RELEASE_NAME-core.dial.svc.cluster.local
       APP_DIAL_ADMIN_API_BASE: http://PLACEHOLDER_DIAL_RELEASE_NAME-admin-backend.dial.svc.cluster.local/
       APP_THEMES_HOST: 'https://PLACEHOLDER_THEMES_PUBLIC_HOST'

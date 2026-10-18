@@ -1,5 +1,13 @@
 # Changelog - naya-helm-deployment (dial-platform)
 
+## 2026.10.4
+
+- **Fixes "Chat is unavailable. Please contact your administrator."** The chat UI runs every conversation with a model through the
+  application `managed-model-chat` (served by QuickApps). The chart did not register it, and the chat UI was not told its id. Now
+  DIAL Core loads it from its own ConfigMap-backed file (`/mnt/system-config/managed-model-chat.json`, listed in
+  `aidial.config.files`), so configuration exported by DIAL Admin cannot drop it, and `APP_MANAGED_CHAT_APPLICATION_ID` of chat names it.
+- No infrastructure change; images unchanged from 2026.10.3.
+
 ## 2026.10.3
 
 - **RAG is no longer part of the platform chart.** The `rag` sub-chart, its values and its image (`naya-dial-rag`) are removed. RAG is
