@@ -92,6 +92,18 @@ def certificate_findings(ctx: Context) -> list[Finding]:
     return findings
 
 
+def license_findings(ctx: Context) -> list[Finding]:
+    """Report the license units this account has already consumed (read only; units cannot be returned)."""
+    from . import licenses
+    if ctx.cloud.runner.dry_run:
+        return []
+    rows = licenses.consumed(ctx.cloud)
+    if not rows:
+        return [ok("license", "no license unit consumed in this account yet (an installation consumes one)")]
+    return [ok("license", f"already consumed in this account: {licenses.describe(rows)}. An installation consumes one unit; "
+                          "units of a PERPETUAL license cannot be returned")]
+
+
 def chart_findings(ctx: Context) -> list[Finding]:
     """Can this account pull the platform chart from the Marketplace registry?"""
     from . import deploy

@@ -542,6 +542,77 @@ class LocalChartTests(Base):
         self.assertIn('ctx.cache.get("local_chart")', body)
 
 
+class LicenseHelperTests(Base):
+    """dial-lic-ins seeds the license records once. An upgrade must not create it again (the Dev post-deploy and the
+    customers' scripts run it once and later upgrades pass lic-ins.enabled=false)."""
+
+    def ctx(self, release_installed, helper_exists):
+        from helpers import make_ctx
+        responses = {("helm", "list"): Result(0, json.dumps([{"chart": "naya-helm-deployment-2026.10.4", "revision": "2",
+                                                              "status": "deployed"}]) if release_installed else "[]")}
+        ctx = make_ctx(responses=responses)
+        ctx.cloud.runner.responses[("kubectl", "--context", ctx.cloud.kube_context, "-n", "dial", "get", "deployment",
+                                    "dial-lic-ins")] = Result(0 if helper_exists else 1, "", "")
+        return ctx
+
+    def built(self, ctx):
+        from dial_install import values
+        return values.build(ctx, deploy.chart_defaults(ctx))
+
+    def test_the_first_installation_runs_the_helper(self):
+        ctx = self.ctx(release_installed=False, helper_exists=False)
+        self.assertTrue(deploy.license_helper_needed(ctx))
+        ctx.cache["license_helper_needed"] = True
+        self.assertNotIn("enabled", self.built(ctx)["lic-ins"])             # the chart default (enabled) applies
+
+    def test_an_upgrade_does_not_create_the_helper_again(self):
+        ctx = self.ctx(release_installed=True, helper_exists=False)
+        self.assertFalse(deploy.license_helper_needed(ctx))
+        ctx.cache["license_helper_needed"] = False
+        self.assertIs(self.built(ctx)["lic-ins"]["enabled"], False)
+
+    def test_an_unfinished_first_installation_keeps_the_helper(self):
+        ctx = self.ctx(release_installed=True, helper_exists=True)
+        self.assertTrue(deploy.license_helper_needed(ctx))
+
+    def test_prepare_decides_before_the_values_are_built(self):
+        text = Path(deploy.__file__).read_text(encoding="utf-8")
+        body = text[text.index("def prepare"):text.index("def chart_defaults")]
+        self.assertIn("license_helper_needed", body)
+
+
+class LicenseReportTests(Base):
+    """The installer reports how many license units the account has consumed (read only), so extra consumption is visible."""
+
+    def ctx(self, rows):
+        from helpers import make_ctx
+        usage = {"LicenseUsage": {"EntitlementUsages": rows}}
+        return make_ctx(responses={
+            ("aws", "license-manager", "list-received-licenses"): ok_json({"Licenses": [{"LicenseArn": "arn:lic:1"}]}),
+            ("aws", "license-manager", "get-license-usage"): ok_json(usage)})
+
+    def test_consumed_units_are_listed_and_the_marketplace_meter_is_ignored(self):
+        from dial_install import licenses
+        ctx = self.ctx([{"Name": "small", "ConsumedValue": "14", "MaxCount": 100},
+                        {"Name": "large", "ConsumedValue": "0", "MaxCount": 100},
+                        {"Name": "AWS::Marketplace::Usage", "ConsumedValue": "5"}])
+        rows = licenses.consumed(ctx.cloud)
+        self.assertEqual(rows, [("small", "14", "100")])
+        self.assertEqual(licenses.describe(rows), "small 14/100")
+
+    def test_check_tells_how_much_is_already_consumed(self):
+        from dial_install import checks
+        ctx = self.ctx([{"Name": "small", "ConsumedValue": "14", "MaxCount": 100}])
+        finding = checks.license_findings(ctx)[0]
+        self.assertIn("small 14/100", finding.message)
+        self.assertEqual(finding.level, "ok")                     # information, never a blocker
+
+    def test_check_says_so_when_nothing_is_consumed(self):
+        from dial_install import checks
+        ctx = self.ctx([])
+        self.assertIn("no license unit consumed", checks.license_findings(ctx)[0].message)
+
+
 class AdapterNamesTests(Base):
     """DIAL Admin names its adapters with a UUID; the installer gives them the display name from installer.yaml."""
 

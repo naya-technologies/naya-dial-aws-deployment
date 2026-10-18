@@ -17,6 +17,7 @@ import json
 import time
 from typing import Callable
 
+from . import licenses
 from .bootstrap import Bootstrap
 from .context import Context
 from .errors import CommandError
@@ -111,15 +112,9 @@ class Uninstaller:
         return self.leftovers()
 
     def report_license(self) -> None:
-        data = self.cloud.aws_json("license-manager", "list-received-licenses", check=False) or {}
-        consumed = []
-        for lic in data.get("Licenses", []):
-            usage = self.cloud.aws_json("license-manager", "get-license-usage", "--license-arn", lic["LicenseArn"], check=False) or {}
-            for entry in usage.get("LicenseUsage", {}).get("EntitlementUsages", []):
-                if entry.get("ConsumedValue") not in (None, "0") and entry.get("Name") != "AWS::Marketplace::Usage":
-                    consumed.append(f"{entry['Name']} {entry['ConsumedValue']}/{entry.get('MaxCount', '?')}")
-        if consumed:
-            self.say("  License usage in this account: " + ", ".join(consumed) + ".")
+        rows = licenses.consumed(self.cloud)
+        if rows:
+            self.say("  License usage in this account: " + licenses.describe(rows) + ".")
             self.say("  Checkouts of type PERPETUAL cannot be released through the API (License Manager refuses "
                      "CheckInLicense). Contact AWS Marketplace seller support if units must be returned.")
         else:

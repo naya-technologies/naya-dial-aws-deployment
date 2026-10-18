@@ -64,3 +64,11 @@ See [releases/README.md](../releases/README.md). In short: build the chart (with
 Marketplace with the release id (all image versions, add-ons included, are set in that chart), run `./dial-install verify-release`,
 optionally add `releases/<id>.yaml` to the installer, bump `infra_revision` if a template changed, `make dist`, and test
 `apply` then `upgrade` on a throw-away installation.
+
+## The license helper runs once
+
+`dial-lic-ins` is a one-time helper: it seeds the license records into Redis, reports `OK`, and the installer then deletes its
+Deployment. The chart still contains it, so a plain `helm upgrade` would create it again and run it again. `./dial-install apply`
+and `upgrade` therefore enable it only for the first installation (or while its Deployment still exists because that installation
+did not finish) and pass `lic-ins.enabled=false` otherwise. You do not need to do anything.
+

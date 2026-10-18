@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from . import __version__, adapters, checks, cilium as cilium_mod, config, deploy, infra, mirror, modules as modules_mod, releases, uninstall as uninstall_mod
+from . import __version__, adapters, checks, licenses, cilium as cilium_mod, config, deploy, infra, mirror, modules as modules_mod, releases, uninstall as uninstall_mod
 from .bootstrap import Bootstrap
 from .cloud import Cloud
 from .context import Context
@@ -87,6 +87,7 @@ def collect_findings(ctx: Context, modules: list[Module], *, with_chart: bool = 
         return findings                      # nothing else can be checked without tools and credentials
     findings += checks.secret_findings(ctx)
     findings += checks.certificate_findings(ctx)
+    findings += checks.license_findings(ctx)
     chart = checks.chart_findings(ctx) if with_chart else []
     findings += chart
     for module in modules:
@@ -382,6 +383,8 @@ def cmd_status(options: Options, runner: Runner, say: Say) -> int:
             status = infra.stack_status(ctx, ctx.stack_name(module.slot)) or "NOT DEPLOYED"
             say(f"  {ctx.stack_name(module.slot):<28} {status}")
     ctx.cloud.aws("eks", "update-kubeconfig", "--name", ctx.cluster_name, "--alias", ctx.cloud.kube_context, write=True)
+    rows = licenses.consumed(ctx.cloud)
+    say("\nLicense (units consumed in this account): " + (licenses.describe(rows) if rows else "none"))
     current = deploy.installed(ctx)
     say("\nPlatform:")
     if current is None:

@@ -26,8 +26,21 @@ _SENSITIVE = re.compile(r"(secret|password|token|api_?key|signing|salt|database_
 
 
 # ---- inputs ---------------------------------------------------------------
+def license_helper_needed(ctx: Context) -> bool:
+    """dial-lic-ins is a one-time helper: it seeds the license records into Redis and is then deleted (see
+    finish_license_installer). It stays in the chart, so every `helm upgrade` would create it again and run it again.
+    It is therefore enabled only for the first installation, or while its Deployment still exists (a first
+    installation that did not finish)."""
+    if ctx.cloud.runner.dry_run or installed(ctx) is None:
+        return True
+    release = ctx.release["helm_release"]
+    found = ctx.cloud.kubectl("-n", release["namespace"], "get", "deployment", f"{release['name']}-lic-ins", check=False)
+    return found.returncode == 0
+
+
 def prepare(ctx: Context) -> None:
-    """Resolve the values that only exist at runtime (Cognito client secrets)."""
+    """Resolve the values that only exist at runtime (Cognito client secrets) and whether the license helper runs."""
+    ctx.cache["license_helper_needed"] = license_helper_needed(ctx)
     identity = ctx.outputs["identity"]
     pool = identity["UserPoolId"]
 
