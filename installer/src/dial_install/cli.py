@@ -25,6 +25,7 @@ def _parser() -> argparse.ArgumentParser:
         p.add_argument("-c", "--config", default="dial.yaml", help="config file (default: dial.yaml)")
         p.add_argument("--profile", help="AWS CLI profile to use (default: the CLI's default credentials)")
         p.add_argument("--release", help="DIAL release to use instead of `release:` in the config (see `releases`)")
+        p.add_argument("--chart", help="vendor: use a local chart directory (with release.yaml) instead of the registry, to test a release before publishing it")
 
     sub.add_parser("init", help="ask a few questions and write dial.yaml")
     common(sub.add_parser("check", help="verify everything is ready (changes nothing)"))
@@ -38,7 +39,6 @@ def _parser() -> argparse.ArgumentParser:
     common(apply)
     apply.add_argument("-y", "--yes", action="store_true", help="do not ask for confirmation")
     apply.add_argument("--dry-run", action="store_true", help="print the commands instead of running them")
-    apply.add_argument("--chart", help="vendor: install from a local chart directory (with release.yaml) to test it before publishing")
     apply.add_argument("--allow-missing-images", type=int, default=0, metavar="N",
                        help="continue when up to N images cannot be copied (default 0); the affected components stay down")
 
@@ -46,7 +46,6 @@ def _parser() -> argparse.ArgumentParser:
     common(upgrade)
     upgrade.add_argument("-y", "--yes", action="store_true", help="do not ask for confirmation")
     upgrade.add_argument("--dry-run", action="store_true", help="print the commands instead of running them")
-    upgrade.add_argument("--chart", help="vendor: upgrade to a local chart directory (with release.yaml) to test it before publishing")
     upgrade.add_argument("--with-infra", action="store_true",
                          help="also update the CloudFormation stacks (needed when a release changes infrastructure)")
 
@@ -62,7 +61,6 @@ def _parser() -> argparse.ArgumentParser:
     sub.add_parser("releases", help="list the DIAL releases included in this package")
     verify = sub.add_parser("verify-release", help="check that every image of a release exists in the Marketplace registry")
     common(verify)
-    verify.add_argument("--chart", help="vendor: check a local chart directory (with release.yaml) before publishing it")
     grant = sub.add_parser("grant-access", help="give another IAM user or role cluster-admin access to the cluster")
     common(grant)
     grant.add_argument("principal_arn", help="ARN of the IAM user or role")

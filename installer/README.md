@@ -19,13 +19,14 @@ Install and upgrade DIAL on AWS from one configuration file.
 
 ## Commands and options
 
-Every command that reads `dial.yaml` accepts the same three options:
+Every command that reads `dial.yaml` accepts the same options:
 
 | Option | Meaning |
 |---|---|
 | `-c`, `--config <file>` | Configuration file (default `dial.yaml` in the current folder). |
 | `--profile <name>` | AWS CLI profile to use (default: the CLI's default credentials; CloudShell needs none). |
 | `--release <id>` | Use this DIAL release instead of `release:` in the file (see `releases`). |
+| `--chart <dir>` | Vendor: use a local chart directory (it must contain `release.yaml`) instead of the registry, to test a release before publishing it. |
 
 | Command | What it does | Changes AWS? | Extra options |
 |---|---|---|---|
@@ -34,13 +35,13 @@ Every command that reads `dial.yaml` accepts the same three options:
 | `check` | Verifies tools, credentials, secret, certificate, chart, quotas, images. | No | common |
 | `plan` | Lists the stacks and platform changes `apply` will make. | No | common |
 | `mirror` | Copies the product images from the Marketplace registry into your private ECR, several at a time, and nothing else. `apply` does the same step and skips what is already there, so run `mirror` first from a fast place (for example CloudShell) to save time. | ECR only | common, `--allow-missing-images N` continue when up to N images cannot be copied |
-| `apply` | Creates or updates the infrastructure, copies images, installs DIAL. Safe to repeat; it resumes. | Yes | `-y/--yes` skip the question, `--dry-run` print the commands, `--chart <dir>` vendor: install a local chart before publishing it, `--allow-missing-images N` continue when up to N images cannot be copied (those components stay down) |
+| `apply` | Creates or updates the infrastructure, copies images, installs DIAL. Safe to repeat; it resumes. | Yes | `-y/--yes` skip the question, `--dry-run` print the commands, `--allow-missing-images N` continue when up to N images cannot be copied (those components stay down) |
 | `status` | Shows the stacks, the installed chart version and the DNS records to create. | No | common |
-| `upgrade` | Moves an installed DIAL to the release in this package. | Yes | `-y/--yes`, `--dry-run`, `--chart <dir>` vendor: upgrade to a local chart before publishing it, `--with-infra` also update the CloudFormation stacks |
+| `upgrade` | Moves an installed DIAL to the release in this package. | Yes | `-y/--yes`, `--dry-run`, `--with-infra` also update the CloudFormation stacks |
 | `grant-access <arn>` | Gives an IAM user or role cluster-admin through an EKS access entry. | EKS only | common |
 | `uninstall` (alias `remove`) | Removes everything this installation created, in an order that cannot get stuck, and checks at the end that nothing is left. Asks you to type the installation name. Details: [docs/UNINSTALL.md](docs/UNINSTALL.md). | **Deletes** | `-y/--yes`, `--dry-run`, `--keep-images` keep the mirrored images, `--keep-secret`, `--keep-snapshot` keep the final database snapshot |
 | `releases` | Lists the releases in this package. | No | none |
-| `verify-release` | Vendor: checks that every image of a release exists in the Marketplace registry. | No | common, `--chart <dir>` check a local chart before publishing |
+| `verify-release` | Vendor: checks that every image of a release exists in the Marketplace registry. | No | common (`--chart <dir>`: check a local chart before publishing) |
 
 Typical order: `init` -> `install-tools` -> `check` -> `plan` -> (`mirror`) -> `apply` -> DNS -> sign in.
 To remove an installation use `uninstall`; see [docs/UNINSTALL.md](docs/UNINSTALL.md).
