@@ -17,7 +17,7 @@ import json
 import time
 from typing import Callable
 
-from . import licenses
+from . import addons, licenses
 from .bootstrap import Bootstrap
 from .context import Context
 from .errors import CommandError
@@ -69,6 +69,14 @@ class Uninstaller:
         data = self.cloud.aws_json("cloudformation", "describe-stack-resources", "--stack-name", stack, check=False)
         return [r["PhysicalResourceId"] for r in (data or {}).get("StackResources", []) if r["ResourceType"] == resource_type]
 
+    def addon_node_groups(self) -> list[str]:
+        """Names of the add-ons whose own node group stack exists (created by `add-ons install`, tagged with the add-on)."""
+        found = []
+        for name, entry in addons.load_catalog().items():
+            if entry.get("node_group") and addons.node_stack_exists(self.ctx, name):
+                found.append(name)
+        return found
+
     def repositories(self) -> list[str]:
         """Mirrored product repositories tagged with this installation."""
         data = self.cloud.aws_json("ecr", "describe-repositories", check=False) or {}
@@ -85,6 +93,7 @@ class Uninstaller:
         stacks = self.owned_stacks()
         lines = [f"Cluster workloads: DIAL, Knative, Istio, load balancers, volumes (cluster {self.ctx.cluster_name})",
                  f"Private DNS zone {self.namespace}.knative.{self.ctx.name}.internal"]
+        lines += [f"CloudFormation stack {addons.node_stack(self.ctx, name)} (node group of add-on {name})" for name in self.addon_node_groups()]
         lines += [f"CloudFormation stack {name} ({slot})" for slot, name in stacks.items()]
         if not self.keep_images:
             lines.append(f"{len(self.repositories())} mirrored product image repositories in your ECR")
@@ -104,6 +113,7 @@ class Uninstaller:
             self.vpc_id = self._outputs(network).get("VPCId")
         self.report_license()
         self.cluster_workloads()
+        self.addon_stacks()
         self.private_zone()
         self.database_protection(stacks.get("database"))
         self.delete_stacks(stacks)
@@ -132,6 +142,8 @@ class Uninstaller:
             kubectl("-n", self.namespace, "delete", "ingress", "--all", "--wait=false", write=True, check=False)
             kubectl("-n", "istio-system", "delete", "svc", "istio-ingressgateway", "--wait=false", write=True, check=False)
             self._wait_for_load_balancers(minutes=5)
+            for release in addons.release_names(self.ctx):          # add-ons first: they depend on the platform
+                self.cloud.helm("uninstall", release, "--namespace", self.namespace, write=True, check=False)
             for release, namespace in (("dial", self.namespace), ("cluster-autoscaler", "kube-system"),
                                        ("dial-cluster-base", "kube-system")):
                 self.cloud.helm("uninstall", release, "--namespace", namespace, write=True, check=False)
@@ -182,6 +194,11 @@ class Uninstaller:
             for group in groups:
                 self.cloud.aws("ec2", "delete-security-group", "--group-id", group["GroupId"], write=True, check=False)
             time.sleep(5)
+
+    def addon_stacks(self) -> None:
+        """Node groups of add-ons: they belong to the cluster, so they go before the stacks they depend on."""
+        for name in self.addon_node_groups():
+            addons.delete_node_group(self.ctx, name, self.say)
 
     def private_zone(self) -> None:
         zone_name = f"{self.namespace}.knative.{self.ctx.name}.internal"
@@ -305,6 +322,7 @@ class Uninstaller:
         clusters = self.cloud.aws_json("rds", "describe-db-clusters", check=False) or {}
         left += [f"database {c['DBClusterIdentifier']}" for c in clusters.get("DBClusters", [])
                  if c["DBClusterIdentifier"].startswith(f"{self.ctx.name}-")]
+        left += [f"node group stack {addons.node_stack(self.ctx, n)}" for n in self.addon_node_groups()]
         left += [f"image repository {r}" for r in ([] if self.keep_images else self.repositories())]
         if not self.keep_secret:
             secrets = self.cloud.aws_json("secretsmanager", "list-secrets", "--include-planned-deletion", check=False) or {}

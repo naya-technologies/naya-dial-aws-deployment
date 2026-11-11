@@ -286,12 +286,14 @@ def copy_images(ctx: Context, images: list[str], say: Callable[[str], None]) -> 
     return copied, sum(1 for r in results if r is False)
 
 
-def copy_pairs(ctx: Context, pairs: list[tuple[str, str]], say: Callable[[str], None]) -> tuple[int, int]:
+def copy_pairs(ctx: Context, pairs: list[tuple[str, str]], say: Callable[[str], None], *,
+               source_hosts: tuple[str, ...] = (), hint: str = "") -> tuple[int, int]:
     """Copy images that are not part of the product registry: `pairs` are (source reference, `path:tag` in the
-    account's ECR). Used for add-ons with their own upstream, such as Cilium. Returns (copied, skipped)."""
+    account's ECR). Used for images with their own upstream, such as Cilium and the optional add-ons. Public sources need
+    no login; for a private ECR source, name its host in `source_hosts`. Returns (copied, skipped)."""
     target = target_host(ctx)
     crane = crane_path(ctx)
-    config_dir = _docker_config(ctx, [target])           # the sources are public; only the target needs a login
+    config_dir = _docker_config(ctx, [target, *[host for host in source_hosts if host != target]])
     env = {"DOCKER_CONFIG": str(config_dir)}
     runner = ctx.cloud.runner
     copied = skipped = 0
@@ -309,7 +311,7 @@ def copy_pairs(ctx: Context, pairs: list[tuple[str, str]], say: Callable[[str], 
                 runner.run([crane, "copy", source, f"{target}/{destination}"], write=True, env=env)
             except CommandError as error:
                 raise InstallerError(f"Could not copy {source}\n{error.stderr[-600:]}",
-                                     "Check that this machine can reach the source registry and may push to your ECR.") from error
+                                     hint or "Check that this machine can reach the source registry and may push to your ECR.") from error
             copied += 1
     finally:
         shutil.rmtree(config_dir, ignore_errors=True)

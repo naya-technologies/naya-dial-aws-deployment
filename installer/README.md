@@ -13,6 +13,7 @@ Install and upgrade DIAL on AWS from one configuration file.
 ./dial-install upgrade         # move to a newer DIAL release later
 ./dial-install grant-access <iam-arn>   # give another admin access to the cluster
 ./dial-install uninstall       # remove everything this installation created (alias: remove)
+./dial-install add-ons list    # optional add-ons (install | upgrade | remove)
 ./dial-install releases        # list the DIAL releases in this package
 ./dial-install verify-release  # vendor: every image of a release exists in the Marketplace registry
 ```
@@ -40,6 +41,7 @@ Every command that reads `dial.yaml` accepts the same options:
 | `upgrade` | Moves an installed DIAL to the release in this package. | Yes | `-y/--yes`, `--dry-run`, `--with-infra` also update the CloudFormation stacks |
 | `grant-access <arn>` | Gives an IAM user or role cluster-admin through an EKS access entry. | EKS only | common |
 | `uninstall` (alias `remove`) | Removes everything this installation created, in an order that cannot get stuck, and checks at the end that nothing is left. Asks you to type the installation name. Details: [docs/UNINSTALL.md](docs/UNINSTALL.md). | **Deletes** | `-y/--yes`, `--dry-run`, `--keep-images` keep the mirrored images, `--keep-secret`, `--keep-snapshot` keep the final database snapshot |
+| `add-ons` (alias `addons`) | `list`, `install <id>`, `upgrade <id>`, `remove <id>`: optional products (AI Brain, ...) from Naya's registry, installed next to the platform. Details: [docs/ADDONS.md](docs/ADDONS.md). | `install`, `upgrade`, `remove` change the cluster and your ECR | `-y/--yes`, `--dry-run`; `install`/`upgrade`: `--version <tag>` (default: the newest), `--model <id>`, `--instance-type <type>`, `--nodes <n>`, `--no-dedicated-nodes` (settings of add-ons that have them); `remove`: `--keep-images` |
 | `releases` | Lists the releases in this package. | No | none |
 | `verify-release` | Vendor: checks that every image of a release exists in the Marketplace registry. | No | common (`--chart <dir>`: check a local chart before publishing) |
 
@@ -60,6 +62,7 @@ No `pip install`, no repository clone: unpack the package and run it. The `-offl
 | Install a newer DIAL release | [docs/UPGRADE.md](docs/UPGRADE.md) |
 | Understand or publish a release | [releases/README.md](releases/README.md) |
 | Fix a problem | [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) |
+| Install an optional add-on | [docs/ADDONS.md](docs/ADDONS.md) |
 | Remove an installation | [docs/UNINSTALL.md](docs/UNINSTALL.md) |
 | Maintain or extend the installer | [docs/DEVELOPING.md](docs/DEVELOPING.md) |
 

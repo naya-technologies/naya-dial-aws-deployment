@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from . import __version__, adapters, checks, licenses, cilium as cilium_mod, config, deploy, infra, mirror, modules as modules_mod, releases, uninstall as uninstall_mod
+from . import __version__, adapters, addons, checks, licenses, cilium as cilium_mod, config, deploy, infra, mirror, modules as modules_mod, releases, uninstall as uninstall_mod
 from .bootstrap import Bootstrap
 from .cloud import Cloud
 from .context import Context
@@ -29,6 +29,8 @@ class Options:
     keep_secret: bool = False
     keep_snapshot: bool = False
     allow_missing_images: int = 0
+    addon: str | None = None
+    addon_settings: dict | None = None      # settings given by flags, e.g. {"model": "..."}
 
 
 Say = Callable[[str], None]
@@ -416,4 +418,92 @@ def cmd_status(options: Options, runner: Runner, say: Say) -> int:
     say(f"  chart {current['chart']}  revision {current['revision']}  status {current['status']}")
     say(f"  configured release {_release_label(ctx)} = chart {ctx.release['chart']['version']}")
     _print_dns(ctx, say)
+    return 0
+
+
+# ---- add-ons -------------------------------------------------------------------------------------------------------
+def _addon_context(options: Options, runner: Runner, say: Say) -> Context | None:
+    """The context for a command that changes an add-on, after the same safety checks `upgrade` makes; None if blocked."""
+    ctx, modules = build_context(options, runner)
+    problems = blocking(checks.tool_findings(ctx) + checks.identity_finding(ctx) + checks.secret_findings(ctx))
+    if problems:
+        for finding in problems:
+            say(render(finding))
+        return None
+    infra.load_outputs(ctx, modules)
+    ctx.cloud.aws("eks", "update-kubeconfig", "--name", ctx.cluster_name, "--alias", ctx.cloud.kube_context, write=True)
+    return ctx
+
+
+def cmd_addons_list(options: Options, runner: Runner, say: Say) -> int:
+    """Every add-on in this package; with an installation reachable, also which are installed. Changes nothing."""
+    ctx = None
+    if options.config_path.is_file():
+        try:
+            ctx, _ = build_context(options, runner)
+            if deploy.installed(ctx) is None:
+                ctx = None
+                say("(The platform is not installed or the cluster is not reachable: showing the catalog only.)\n")
+        except InstallerError as error:
+            say(f"({error.message.splitlines()[0]} Showing the catalog only.)\n")
+            ctx = None
+    for row in addons.rows(ctx):
+        say(f"{row['id']:<16} {row['version']:<12} {row['status'] or '':<32} {row['name']}")
+        say(f"{'':<16} {row['description']}")
+    say("\nInstall: ./dial-install add-ons install <id>     Remove: ./dial-install add-ons remove <id>")
+    return 0
+
+
+def cmd_addons_install(options: Options, runner: Runner, say: Say, ask: Callable[[str], str] = input) -> int:
+    entry = addons.entry_for(options.addon)
+    requested, settings = addons.split_settings(options.addon_settings)
+    addons.resolve_options(entry, None, settings)         # a wrong flag fails before anything is touched
+    ctx = _addon_context(options, runner, say)
+    if ctx is None:
+        return 1
+    entry = addons.pin(ctx, entry, requested)             # `latest` is looked up in the registry now
+    images = ", ".join(image for image, _ in addons.source_images(entry))
+    if not _confirm(options, say, f"Install {entry['display_name']} {entry['version']} (copies {images}; registers it in DIAL Core and restarts Core when it has something to register)?", ask):
+        say("Cancelled. Nothing was changed.")
+        return 0
+    addons.install(ctx, options.addon, say, options.addon_settings)
+    return 0
+
+
+def cmd_addons_upgrade(options: Options, runner: Runner, say: Say, ask: Callable[[str], str] = input) -> int:
+    entry = addons.entry_for(options.addon)
+    requested, settings = addons.split_settings(options.addon_settings)
+    addons.resolve_options(entry, None, settings)
+    ctx = _addon_context(options, runner, say)
+    if ctx is None:
+        return 1
+    entry = addons.pin(ctx, entry, requested)
+    state = addons.installed(ctx).get(options.addon)
+    if addons.is_current(entry, state, settings):
+        say(f"{entry['display_name']} is already at {entry['version']}. Nothing to do.")
+        return 0
+    if not _confirm(options, say, f"Upgrade {entry['display_name']} {state['version'] if state else '?'} -> {entry['version']}?", ask):
+        say("Cancelled. Nothing was changed.")
+        return 0
+    addons.upgrade(ctx, options.addon, say, options.addon_settings)
+    return 0
+
+
+def cmd_addons_remove(options: Options, runner: Runner, say: Say, ask: Callable[[str], str] = input) -> int:
+    entry = addons.entry_for(options.addon)
+    ctx = _addon_context(options, runner, say)
+    if ctx is None:
+        return 1
+    say(f"This removes {entry['display_name']}: its Helm release, its registration in DIAL Core (Core restarts), and "
+        + ("" if options.keep_images else "its image repositories in your ECR. ")
+        + "Applications you created from its application type are not deleted; they stop working.")
+    if not (options.assume_yes or options.dry_run):
+        if ask(f"Type the add-on name ({entry['id']}) to confirm: ").strip() != entry["id"]:
+            say("Cancelled. Nothing was changed.")
+            return 0
+    left = addons.remove(ctx, options.addon, say, keep_images=options.keep_images)
+    if left:
+        say("\nSome things are still there; run the command again: " + "; ".join(left))
+        return 1
+    say(f"\n{entry['display_name']} is removed. Nothing of it is left." if not runner.dry_run else "\nDry run: nothing was changed.")
     return 0

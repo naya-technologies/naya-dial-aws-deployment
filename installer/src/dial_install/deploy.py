@@ -41,6 +41,8 @@ def license_helper_needed(ctx: Context) -> bool:
 def prepare(ctx: Context) -> None:
     """Resolve the values that only exist at runtime (Cognito client secrets) and whether the license helper runs."""
     ctx.cache["license_helper_needed"] = license_helper_needed(ctx)
+    from . import addons                      # imported late: addons uses this module
+    addons.remember_registrations(ctx)
     identity = ctx.outputs["identity"]
     pool = identity["UserPoolId"]
 

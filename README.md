@@ -38,6 +38,7 @@ Every step in detail: **[installer/docs/INSTALL.md](installer/docs/INSTALL.md)**
 | Install DIAL, step by step | [installer/docs/INSTALL.md](installer/docs/INSTALL.md) |
 | Know what to prepare first | [installer/docs/PREREQUISITES.md](installer/docs/PREREQUISITES.md) |
 | Change a setting (network, sizes, sign-in, Cilium...) | [installer/docs/CONFIGURATION.md](installer/docs/CONFIGURATION.md) |
+| Install an optional add-on (AI Brain, ...) | [installer/docs/ADDONS.md](installer/docs/ADDONS.md) |
 | Move to a newer DIAL version | [installer/docs/UPGRADE.md](installer/docs/UPGRADE.md) |
 | Fix a problem | [installer/docs/TROUBLESHOOTING.md](installer/docs/TROUBLESHOOTING.md) |
 | Remove everything | [installer/docs/UNINSTALL.md](installer/docs/UNINSTALL.md) |

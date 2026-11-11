@@ -1,0 +1,59 @@
+# Catalog entry of one add-on (format dial-addon/v1). See docs/ADDONS.md.
+apiVersion: dial-addon/v1
+id: ai-rag
+display_name: AI RAG
+description: Answers questions from your documents (retrieval-augmented generation) using a DIAL model.
+version: latest                 # `latest`: the highest YYYY.M.N tag in the registry at the moment you run the command; or pin a tag
+
+source:
+  registry: 458490025663.dkr.ecr.us-east-1.amazonaws.com     # Naya's artifact registry (not the AWS Marketplace one)
+
+images:
+  - repository: naya-dial-ai-rag
+
+chart: charts/dial-extension-2.1.0.tgz
+values: values.yaml
+service: rag                    # the Kubernetes service is <platform release>-rag
+
+# RAG is large (4 GiB), so it gets its own node group: nothing else runs on it, and it does not compete with the platform.
+# The customer can change all of this with flags (--instance-type, --nodes) or use the shared nodes (--no-dedicated-nodes).
+node_group:
+  instance_type: c6i.xlarge     # 4 vCPU / 8 GiB
+  nodes: 1
+  disk_gb: 50
+  workload: rag                 # node label `workload` and taint `dedicated` (the add-on's pod tolerates exactly this)
+
+# Settings the customer may change with a flag. The value replaces PLACEHOLDER_<NAME> (NAME = the option, upper case) in values.yaml.
+options:
+  model:
+    description: DIAL model (deployment id) RAG uses to answer. Default is the system default model.
+    default: default.model
+
+# Applications registered in DIAL Core (Core's configuration format). Tokens: PLACEHOLDER_SERVICE_URL (the add-on's service),
+# PLACEHOLDER_THEMES_HOST (where the icon is served).
+core:
+  applications:
+    dial-x-rag:
+      displayName: DIAL X RAG
+      endpoint: PLACEHOLDER_SERVICE_URL/openai/deployments/dial-rag/chat/completions
+      iconUrl: https://PLACEHOLDER_THEMES_HOST/RAG_files_search.svg
+      # No roles: nobody can use it until an administrator gives it roles (DIAL Admin > Applications), like a new model.
+      # DIAL Admin writes exactly this (`userRoles: []`) for an entity without roles. Leaving the key out would make it public.
+      userRoles: []
+      inputAttachmentTypes: ["*/*"]
+      maxRetryAttempts: 1
+      # Feature names as DIAL Admin writes them into Core's configuration file (only the ones that are on).
+      features:
+        system_prompt_supported: true
+        tools_supported: true
+        seed_supported: false
+        url_attachments_supported: true
+        folder_attachments_supported: true
+        allow_resume: true
+        accessible_by_per_request_key: true
+        content_parts_supported: true
+        temperature_supported: true
+        parallel_tool_calls_supported: true
+        assistant_attachments_in_request_supported: true
+        max_tokens_supported: true
+        custom_temperature_supported: true

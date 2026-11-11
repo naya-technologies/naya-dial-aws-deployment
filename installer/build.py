@@ -11,7 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 HELM = ROOT.parent / "charts"
-INCLUDE = ["dial-install", "installer.yaml", "releases", "README.md", "src", "modules", "assets", "schema", "examples", "docs", "vendor"]
+INCLUDE = ["dial-install", "installer.yaml", "releases", "README.md", "src", "modules", "assets", "schema", "examples", "docs", "vendor", "addons"]
 SKIP = ("__pycache__", ".pyc", ".DS_Store")
 
 
