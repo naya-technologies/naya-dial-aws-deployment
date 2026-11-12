@@ -114,4 +114,15 @@ Nothing else changes: no secret, no host name, no DNS record.
 
 DIAL Core does not restrict the audience of the tokens it accepts in this installation (its Cognito provider has no `audiences` setting), so the
 new client needs no change there. The Cognito Hosted UI created by the installer is the classic one, so no managed-login style is needed.
-To check after `apply`: `curl https://<chat host>/config.js` contains `"desktop":{"cognitoClientId":"..."}`.
+
+### The connection file
+
+At the end of `apply` and `upgrade`, and again whenever you run `./dial-install status`, the installer writes **`<name>.dialx.json`** next to `dial.yaml`, replacing
+the old one, and prints its path and content. Your users import this one file in DIAL X Desktop (New connection, Import file, Save, then click the
+connection to sign in); they type no address or id. It holds the addresses of core, chat, admin and flows, the Cognito region, user pool, domain and
+Desktop client id, and the id of the managed chat application. It contains no secret, but it lists where your environment is: share it with your users, do not publish it.
+
+Before it is handed over the installer checks it, and stops with the name of the check that failed (and deletes the file): `file-format` (valid JSON,
+under 64 KB, all values text), `urls-https`, `no-secrets`, `servers-answer`, `chat-config-has-client` (the chat's `/config.js` contains the Desktop
+client id, which proves the chat picked up the setting) and `cognito-authorize` (Cognito's sign-in page accepts the client). Checks that need
+your DNS records show `[WAIT]` while the records do not exist yet; create them and run `./dial-install status` to check again.

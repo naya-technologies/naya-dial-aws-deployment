@@ -133,6 +133,13 @@ The installer ends with the message **"create the first user"** (it does not cre
    administrator, create a group named `admin` and add the user to it.
    With SAML sign-in, users sign in through your identity provider; map its administrator group to `admin`.
 
+## 9. DIAL X Desktop (optional)
+
+If you answered yes to supporting the DIAL Desktop application (`features.desktop_app: true`), the installer also writes `<name>.dialx.json` next to
+`dial.yaml` and prints it. Give that file to your users: in DIAL X Desktop they choose New connection, Import file, pick the file, Save, and click the
+connection to sign in. After you create the DNS records (step 7) run `./dial-install status` once: it checks the file again against your live
+environment. Details: [CONFIGURATION.md](CONFIGURATION.md#dial-desktop-application).
+
 ## If something fails
 
 - Read the message: it says what to fix. Then run the same command again.

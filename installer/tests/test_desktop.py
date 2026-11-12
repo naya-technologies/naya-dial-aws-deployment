@@ -5,11 +5,12 @@ import json
 import subprocess
 import tempfile
 import unittest
+from pathlib import Path
 
 import yaml
 
 from helpers import Base, CHART_VALUES_TEXT, FAKE_OUTPUTS, PLATFORM_CHART, make_ctx, resolved
-from dial_install import modules, values
+from dial_install import desktop, modules, values
 from dial_install.errors import InstallerError
 from dial_install.values import placeholders
 from test_modules import template
@@ -149,6 +150,196 @@ class ChatSettingTests(Base):
             chat = next(d for d in yaml.safe_load_all(result.stdout) if d and d["kind"] == "Deployment" and d["metadata"]["name"] == "dial-chat")
             env = {e["name"]: e.get("value") for e in chat["spec"]["template"]["spec"]["containers"][0]["env"]}
             self.assertEqual(env["APP_COGNITO_DESKTOP_CLIENT_ID"], expected)
+
+
+CHAT_CONFIG = 'window.__DIAL_CONFIG__ = {"desktop":{"cognitoClientId":"%s"}};' % CLIENT
+
+
+class Site:
+    """A scripted fake of the internet: which address answers what."""
+
+    def __init__(self, config_js=CHAT_CONFIG, authorize=200, missing_dns=(), refuse=()):
+        self.config_js, self.authorize, self.missing_dns, self.refuse = config_js, authorize, set(missing_dns), set(refuse)
+        self.asked = []
+
+    def __call__(self, url):
+        from urllib.parse import urlparse
+        host = urlparse(url).hostname
+        self.asked.append(url)
+        if host in self.missing_dns:
+            raise desktop.NotResolvable(host)
+        if host in self.refuse:
+            raise desktop.Unreachable("connection refused")
+        if "/oauth2/authorize" in url:
+            return self.authorize, ""
+        if url.endswith("/config.js"):
+            return 200, self.config_js
+        return 200, "<html>"
+
+
+def desktop_ctx():
+    ctx = ctx_with(True)
+    ctx.cache["output_dir"] = None
+    return ctx
+
+
+class ConnectionFileTests(Base):
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.dir.cleanup)
+        self.directory = Path(self.dir.name)
+        self.ctx = ctx_with(True)
+        self.lines = []
+
+    def deliver(self, site=None, ctx=None, chat_id="managed-model-chat"):
+        return desktop.deliver(ctx or self.ctx, self.lines.append, self.directory, chat_id, site or Site())
+
+    @property
+    def text(self):
+        return "\n".join(self.lines)
+
+    def test_the_file_holds_exactly_the_documented_fields_from_known_values(self):
+        path = self.deliver()
+        self.assertEqual(path, (self.directory / "acme.dialx.json").resolve())
+        self.assertEqual(json.loads(path.read_text()), {
+            "name": "acme",
+            "coreUrl": "https://core.dial.acme.example", "chatUrl": "https://chat.dial.acme.example",
+            "adminUrl": "https://admin.dial.acme.example", "flowsUrl": "https://flows.dial.acme.example",
+            "cognito": {"region": "us-east-1", "userPoolId": "us-east-1_pool",
+                        "domain": "https://acme.auth.us-east-1.amazoncognito.com", "clientId": CLIENT},
+            "managedChatApplicationId": "managed-model-chat"})
+
+    def test_custom_host_names_are_used(self):
+        cfg = resolved(features={"desktop_app": True}, domain={"hosts": {"chat": "talk.example.org"}})
+        ctx = make_ctx(cfg=cfg)
+        ctx.outputs["identity"] = {**FAKE_OUTPUTS["identity"], "DesktopClientId": CLIENT}
+        self.assertEqual(json.loads(self.deliver(ctx=ctx).read_text())["chatUrl"], "https://talk.example.org")
+
+    def test_it_prints_the_path_the_content_and_the_message(self):
+        path = self.deliver()
+        self.assertIn("Environment acme is ready.", self.text)
+        self.assertIn(f"Desktop connection file: {path}", self.text)
+        self.assertIn("New connection > Import file > choose the file > Save, then click the connection to sign in.", self.text)
+        self.assertIn('"userPoolId": "us-east-1_pool"', self.text)
+        self.assertIn("do not publish", self.text)
+
+    def test_a_new_run_replaces_the_old_file(self):
+        self.deliver()
+        (self.directory / "acme.dialx.json").write_text("old")
+        self.deliver()
+        self.assertIn("coreUrl", (self.directory / "acme.dialx.json").read_text())
+
+    def test_nothing_is_written_when_desktop_is_not_supported_or_in_a_dry_run(self):
+        off = ctx_with(False)
+        self.assertIsNone(self.deliver(ctx=off))
+        dry = make_ctx(cfg=resolved(features={"desktop_app": True}), dry_run=True)
+        self.assertIsNone(self.deliver(ctx=dry))
+        self.assertEqual(list(self.directory.iterdir()), [])
+
+    def test_every_check_has_a_name_and_passes_for_a_healthy_environment(self):
+        self.deliver()
+        for name in ("file-format", "urls-https", "no-secrets", "servers-answer", "chat-config-has-client", "cognito-authorize"):
+            self.assertIn(f"[ OK ] {name}", self.text)
+
+    def test_the_authorize_request_uses_the_client_and_the_callback_of_the_application(self):
+        site = Site()
+        self.deliver(site)
+        url = next(u for u in site.asked if "/oauth2/authorize" in u)
+        self.assertTrue(url.startswith("https://acme.auth.us-east-1.amazoncognito.com/oauth2/authorize?"))
+        for part in (f"client_id={CLIENT}", "response_type=code", "scope=openid+email+profile", "redirect_uri=nayadial%3A%2F%2Fauth%2Fcallback"):
+            self.assertIn(part, url)
+
+    def failure(self, site):
+        with self.assertRaises(InstallerError) as raised:
+            self.deliver(site)
+        self.assertFalse((self.directory / "acme.dialx.json").exists(), "a file that failed its checks must not be left behind")
+        return raised.exception
+
+    def test_a_chat_that_has_not_picked_up_the_setting_fails_with_that_check(self):
+        error = self.failure(Site(config_js='window.__DIAL_CONFIG__ = {"desktop":{"cognitoClientId":""}};'))
+        self.assertIn("chat-config-has-client", error.message)
+
+    def test_a_chat_without_any_desktop_block_fails_too(self):
+        self.assertIn("chat-config-has-client", self.failure(Site(config_js="window.__DIAL_CONFIG__ = {};")).message)
+
+    def test_cognito_refusing_the_client_fails_with_that_check_and_names_the_likely_cause(self):
+        error = self.failure(Site(authorize=403))
+        self.assertIn("cognito-authorize", error.message)
+        self.assertIn("managed-login style", error.hint)
+
+    def test_a_server_that_does_not_answer_fails(self):
+        self.assertIn("servers-answer", self.failure(Site(refuse={"core.dial.acme.example"})).message)
+
+    def test_missing_dns_records_wait_instead_of_failing_and_say_how_to_check_again(self):
+        site = Site(missing_dns={"chat.dial.acme.example", "core.dial.acme.example", "admin.dial.acme.example", "flows.dial.acme.example"})
+        path = self.deliver(site)
+        self.assertTrue(path.exists())
+        self.assertIn("[WAIT] servers-answer", self.text)
+        self.assertIn("[WAIT] chat-config-has-client", self.text)
+        self.assertIn("[ OK ] cognito-authorize", self.text)       # Cognito does not depend on the customer's DNS
+        self.assertIn("./dial-install status", self.text)
+
+    def test_checks_on_the_text_itself(self):
+        doc = desktop.document(self.ctx, "managed-model-chat")
+        good = json.dumps(doc)
+
+        def status(text, name):
+            return next(c for c in desktop.verify(self.ctx, doc, text, Site()) if c.name == name).status
+        self.assertEqual(status(good, "file-format"), "ok")
+        self.assertEqual(status("{not json", "file-format"), "fail")
+        self.assertEqual(status(json.dumps({**doc, "padding": "x" * 70000}), "file-format"), "fail")
+        self.assertEqual(status(json.dumps({**doc, "n": 1}), "file-format"), "fail")        # every value must be text
+        self.assertEqual(status(good, "no-secrets"), "ok")
+        self.assertEqual(status(good + self.ctx.secret["dial_api_key"], "no-secrets"), "fail")
+        self.assertEqual(status(good + "client " + self.ctx.cache["cognito"]["client_secret"] + "xxxxx", "no-secrets"), "ok")   # too short to be a secret
+        self.assertEqual(status(good.replace('"name"', '"apiKey"'), "no-secrets"), "fail")
+        self.assertEqual(status(good + "eyJhbGciOiJIUzI1NiJ9.payload", "no-secrets"), "fail")
+        http = dict(doc, chatUrl="http://chat.dial.acme.example")
+        self.assertEqual(next(c for c in desktop.verify(self.ctx, http, json.dumps(http), Site()) if c.name == "urls-https").status, "fail")
+
+    def test_the_file_has_no_secret_in_a_real_run(self):
+        path = self.deliver()
+        for value in self.ctx.secret.values():
+            self.assertNotIn(value, path.read_text())
+
+
+class InstallFlowTests(Base):
+    def test_apply_writes_the_file_next_to_the_configuration_and_a_second_run_replaces_it(self):
+        import test_workflow
+        from unittest import mock as _mock
+        raw = yaml.safe_load((test_workflow.ROOT / "examples" / "dial.minimal.yaml").read_text())
+        raw["features"] = {"desktop_app": True}
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "dial.yaml"
+            config.write_text(yaml.safe_dump(raw))
+            original = copy.deepcopy(FAKE_OUTPUTS["identity"])
+            FAKE_OUTPUTS["identity"]["DesktopClientId"] = CLIENT
+            self.addCleanup(lambda: FAKE_OUTPUTS.__setitem__("identity", original))
+            with _mock.patch.object(desktop, "fetch", Site()):
+                runner, code, say = test_workflow.run_full_apply(config)
+                self.assertEqual(code, 0, say.text)
+                path = Path(directory) / "acme.dialx.json"
+                self.assertTrue(path.is_file(), say.text)
+                self.assertEqual(json.loads(path.read_text())["cognito"]["clientId"], CLIENT)
+                self.assertEqual(json.loads(path.read_text())["managedChatApplicationId"], "managed-model-chat")
+                self.assertIn("Environment acme is ready.", say.text)
+                path.write_text("stale")
+                _, code, say = test_workflow.run_full_apply(config)
+                self.assertEqual(code, 0, say.text)
+                self.assertIn("coreUrl", path.read_text())
+            deployed = [a for a in runner.writes if a[:3] == ["aws", "cloudformation", "deploy"] and "acme-identity" in a]
+            self.assertIn("EnableDesktopApp=true", deployed[0])
+
+    def test_without_the_flag_apply_writes_no_file(self):
+        import test_workflow
+        raw = yaml.safe_load((test_workflow.ROOT / "examples" / "dial.minimal.yaml").read_text())
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "dial.yaml"
+            config.write_text(yaml.safe_dump(raw))
+            _, code, say = test_workflow.run_full_apply(config)
+            self.assertEqual(code, 0, say.text)
+            self.assertEqual([p.name for p in Path(directory).iterdir()], ["dial.yaml"])
+            self.assertNotIn("Desktop connection file", say.text)
 
 
 if __name__ == "__main__":

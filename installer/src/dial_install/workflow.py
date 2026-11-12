@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from . import __version__, adapters, checks, licenses, cilium as cilium_mod, config, deploy, infra, mirror, modules as modules_mod, releases, uninstall as uninstall_mod
+from . import __version__, adapters, checks, desktop, licenses, cilium as cilium_mod, config, deploy, infra, mirror, modules as modules_mod, releases, uninstall as uninstall_mod
 from .bootstrap import Bootstrap
 from .cloud import Cloud
 from .context import Context
@@ -56,6 +56,7 @@ def build_context(options: Options, runner: Runner) -> tuple[Context, list[Modul
     if options.chart_path:
         ctx.cache["local_chart"] = options.chart_path
     ctx.cache["allow_missing_images"] = options.allow_missing_images
+    ctx.cache["output_dir"] = options.config_path.resolve().parent        # where files for the customer (the Desktop connection file) go
     return ctx, selected
 
 
@@ -266,6 +267,21 @@ def _verify_and_report(ctx: Context, say: Say, *, first_install: bool = False) -
     _print_dns(ctx, say)
     if first_install:
         _print_first_user(ctx, say)
+    _deliver_desktop_file(ctx, say)
+
+
+def _managed_chat_id(ctx: Context) -> str:
+    """The id of the managed chat application as the chart configures it for the chat (`APP_MANAGED_CHAT_APPLICATION_ID`)."""
+    try:
+        return deploy.chart_defaults(ctx)["dial"]["chat"]["env"]["APP_MANAGED_CHAT_APPLICATION_ID"]
+    except (KeyError, TypeError):
+        return "managed-model-chat"
+
+
+def _deliver_desktop_file(ctx: Context, say: Say) -> None:
+    """With features.desktop_app: write, check and print <name>.dialx.json (see desktop.py)."""
+    if ctx.cfg["features"]["desktop_app"]:
+        desktop.deliver(ctx, say, ctx.cache["output_dir"], _managed_chat_id(ctx))
 
 
 def _print_first_user(ctx: Context, say: Say) -> None:
@@ -416,4 +432,12 @@ def cmd_status(options: Options, runner: Runner, say: Say) -> int:
     say(f"  chart {current['chart']}  revision {current['revision']}  status {current['status']}")
     say(f"  configured release {_release_label(ctx)} = chart {ctx.release['chart']['version']}")
     _print_dns(ctx, say)
+    if ctx.cfg["features"]["desktop_app"] and not runner.dry_run:
+        identity = next(m for m in modules if m.slot == "identity")
+        outputs = infra.read_outputs(ctx, identity)
+        if outputs and outputs.get("DesktopClientId"):
+            ctx.outputs["identity"] = outputs
+            _deliver_desktop_file(ctx, say)                     # created again with the current values
+        else:
+            say("\nDIAL X Desktop: the sign-in client does not exist yet. Run `./dial-install apply` (or `upgrade --with-infra`).")
     return 0
