@@ -41,6 +41,7 @@ working examples are in [examples/](../examples/).
 | `registry.provider` | `ecr-mirror` | `ecr-mirror` copies the product images into your private ECR at install and upgrade and the cluster pulls from there; `public` pulls straight from the Marketplace registry. |
 | `features.analytics` | `true` | Superset, Grafana, InfluxDB. |
 | `features.deployment_manager` | `true` | The application deployment manager. |
+| `features.desktop_app` | `false` | Support the DIAL Desktop application: `apply` creates its Cognito app client (public, no secret, authorization code flow, callbacks `nayadial://auth/callback` and `nayadial://auth/logout`, refresh token 30 days) and the chat is told its id (`/config.js` then contains `desktop.cognitoClientId`). Turning it on for an installed environment needs `./dial-install upgrade --with-infra`. See below. |
 | `features.container_logs` | `true` | Send container logs and metrics to CloudWatch (Container Insights). |
 
 Edits to this file take effect on the next `apply` (infrastructure) or `upgrade` (platform settings).
@@ -98,3 +99,19 @@ registry. The installer copies them from `quay.io/cilium` into your ECR (`naya-d
 To use your own mirror, change the sources under `cilium.images` in `installer.yaml`. The Cilium chart itself is
 inside the installer package.
 
+
+## DIAL Desktop application
+
+```
+features:
+  desktop_app: true
+```
+
+The desktop application signs in through Cognito with its own app client, `dial-x-desktop`: a public client (no secret), authorization
+code only, scopes `openid email profile`, the same identity providers as the chat client (so SAML works too), and the custom-scheme
+callbacks above. The installer creates it with the rest of the sign-in stack and gives its id to the chat (`APP_COGNITO_DESKTOP_CLIENT_ID`).
+Nothing else changes: no secret, no host name, no DNS record.
+
+DIAL Core does not restrict the audience of the tokens it accepts in this installation (its Cognito provider has no `audiences` setting), so the
+new client needs no change there. The Cognito Hosted UI created by the installer is the classic one, so no managed-login style is needed.
+To check after `apply`: `curl https://<chat host>/config.js` contains `"desktop":{"cognitoClientId":"..."}`.

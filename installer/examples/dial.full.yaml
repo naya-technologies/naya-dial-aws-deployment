@@ -66,4 +66,5 @@ sizing:
 features:
   analytics: true
   deployment_manager: true
+  desktop_app: false
   container_logs: true

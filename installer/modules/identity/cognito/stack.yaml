@@ -54,6 +54,12 @@ Parameters:
     Default: ''
     Description: Optional chat app client name.
 
+  EnableDesktopApp:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: Create the app client of the DIAL Desktop application (public client, no secret, custom URL scheme nayadial://).
+
 Conditions:
   SelfRegistrationDisabled: !Equals [!Ref DisableSelfRegistration, 'true']
   HasCustomHostedUIDomainPrefix: !Not [!Equals [!Ref HostedUIDomainPrefix, '']]
@@ -61,6 +67,7 @@ Conditions:
   HasSAMLMetadataURL: !Not [!Equals [!Ref SAMLMetadataURL, '']]
   SAMLProviderEnabled: !And [!Condition HasSAMLProviderName, !Condition HasSAMLMetadataURL]
   HasChatAppClientName: !Not [!Equals [!Ref ChatAppClientName, '']]
+  DesktopAppEnabled: !Equals [!Ref EnableDesktopApp, 'true']
 
 Resources:
   UserPool:
@@ -180,6 +187,43 @@ Resources:
         AccessToken: minutes
         IdToken: minutes
 
+  # The DIAL Desktop application: a public client (it cannot keep a secret), authorization code flow only.
+  DesktopAppClient:
+    Type: AWS::Cognito::UserPoolClient
+    Condition: DesktopAppEnabled
+    Properties:
+      ClientName: dial-x-desktop
+      UserPoolId: !Ref UserPool
+      GenerateSecret: false
+      ExplicitAuthFlows:
+        - ALLOW_CUSTOM_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_USER_SRP_AUTH
+      AllowedOAuthFlows:
+        - code
+      AllowedOAuthScopes:
+        - email
+        - openid
+        - profile
+      AllowedOAuthFlowsUserPoolClient: true
+      CallbackURLs:
+        - 'nayadial://auth/callback'
+      LogoutURLs:
+        - 'nayadial://auth/logout'
+      SupportedIdentityProviders:
+        - COGNITO
+        - !If [SAMLProviderEnabled, !Ref SAMLIdentityProvider, !Ref AWS::NoValue]
+      PreventUserExistenceErrors: ENABLED
+      EnableTokenRevocation: true
+      RefreshTokenValidity: 30
+      AccessTokenValidity: 60
+      IdTokenValidity: 60
+      TokenValidityUnits:
+        RefreshToken: days
+        AccessToken: minutes
+        IdToken: minutes
+
 Outputs:
   UserPoolId:
     Description: Cognito User Pool ID (Chat Users)
@@ -246,3 +290,10 @@ Outputs:
   AdminCognitoHostedUIUrl:
     Description: Cognito Hosted UI URL (Admin)
     Value: !Sub 'https://${UserPoolDomain}.auth.${AWS::Region}.amazoncognito.com'
+
+  DesktopClientId:
+    Condition: DesktopAppEnabled
+    Description: Cognito App Client ID (DIAL Desktop)
+    Value: !Ref DesktopAppClient
+    Export:
+      Name: !Sub '${AWS::StackName}-DesktopClientId'

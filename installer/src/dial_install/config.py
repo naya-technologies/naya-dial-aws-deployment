@@ -129,6 +129,7 @@ def resolve(raw: dict, release: dict) -> dict:
     features = cfg.setdefault("features", {})
     features.setdefault("analytics", True)
     features.setdefault("deployment_manager", True)
+    features.setdefault("desktop_app", False)
     # Container Insights puts a webhook on the control plane's path to the pods, which an overlay network cannot reach.
     features.setdefault("container_logs", kube["cni"] != "cilium")
 
