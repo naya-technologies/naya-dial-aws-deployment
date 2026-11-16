@@ -81,6 +81,15 @@ before Helm, using the Core image selected in the chart. The same Job prepares
 the Admin IAM login when enabled. Legacy bootstrap uses the PostgreSQL client
 image pinned in the release manifest (`addons.rds_iam_bootstrap_image`).
 
+For an unreleased checkout, run the installer from `installer/` with your
+local `dial.yaml`. The licensing image tags marked `preloadedImages` must
+already be present in the deployment account's ECR registry.
+
+```bash
+./dial-install check --chart ../charts/dial-platform
+./dial-install apply --chart ../charts/dial-platform
+```
+
 Never put a real secret, an account id, a region or a host name in `values.yaml`.
 
 ## Image versions

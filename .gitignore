@@ -5,3 +5,4 @@ dial.yaml
 dial-secrets.json
 *.kubeconfig
 .venv/
+.idea/
