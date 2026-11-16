@@ -155,7 +155,6 @@ def table(ctx: Context) -> dict[str, Callable[[], str]]:
         # storage, cache, database
         "S3_BUCKET_NAME": lambda: out["storage"]["S3BucketName"],
         "REDIS_ENDPOINT": lambda: out["cache"]["RedisEndpoint"],
-        "REDIS_HOSTNAME": lambda: out["cache"]["RedisEndpoint"].split("://")[-1].split(":")[0],
         "REDIS_USER_ID": lambda: out["cache"]["RedisUserId"],
         "REDIS_CLUSTER_NAME": lambda: out["cache"]["RedisClusterName"],
         "SUPERSET_CACHE_REDIS_URL": lambda: out["cache"]["RedisEndpoint"].rstrip("/") + "/0",

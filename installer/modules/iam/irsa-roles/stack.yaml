@@ -92,6 +92,13 @@ Resources:
               - Effect: Allow
                 Action: ['elasticache:Connect']
                 Resource: [!Ref RedisCacheArn, !Ref RedisUserArn]
+        - PolicyName: DialCoreLicensingDatabaseAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: 'rds-db:connect'
+                Resource: !Sub 'arn:${AWS::Partition}:rds-db:${AWS::Region}:${AWS::AccountId}:dbuser:${AdminDatabaseClusterResourceId}/dial_core_licensing_iam'
         - PolicyName: LicenseManagerReadAccess
           PolicyDocument:
             Version: '2012-10-17'
@@ -125,6 +132,7 @@ Resources:
                   - 'license-manager:ListLicenseManagerReportGenerators'
                   - 'license-manager:GetLicenseUsage'
                   - 'license-manager:CheckoutLicense'
+                  - 'license-manager:CheckInLicense'
                   - 'license-manager:GetLicense'
                   - 'license-manager:ListFailuresForLicenseConfigurationOperations'
                   - 'license-manager:ListLicenseVersions'

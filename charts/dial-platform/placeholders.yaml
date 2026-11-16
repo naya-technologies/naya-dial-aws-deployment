@@ -163,9 +163,6 @@ placeholders:
   REDIS_ENDPOINT:
     source: stack-output
     description: rediss://host:port of the cache.
-  REDIS_HOSTNAME:
-    source: derived
-    description: Host part of the cache endpoint.
   REDIS_USER_ID:
     source: stack-output
     description: ElastiCache IAM user id.

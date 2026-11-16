@@ -26,21 +26,8 @@ _SENSITIVE = re.compile(r"(secret|password|token|api_?key|signing|salt|database_
 
 
 # ---- inputs ---------------------------------------------------------------
-def license_helper_needed(ctx: Context) -> bool:
-    """dial-lic-ins is a one-time helper: it seeds the license records into Redis and is then deleted (see
-    finish_license_installer). It stays in the chart, so every `helm upgrade` would create it again and run it again.
-    It is therefore enabled only for the first installation, or while its Deployment still exists (a first
-    installation that did not finish)."""
-    if ctx.cloud.runner.dry_run or installed(ctx) is None:
-        return True
-    release = ctx.release["helm_release"]
-    found = ctx.cloud.kubectl("-n", release["namespace"], "get", "deployment", f"{release['name']}-lic-ins", check=False)
-    return found.returncode == 0
-
-
 def prepare(ctx: Context) -> None:
-    """Resolve the values that only exist at runtime (Cognito client secrets) and whether the license helper runs."""
-    ctx.cache["license_helper_needed"] = license_helper_needed(ctx)
+    """Resolve runtime Cognito client secrets."""
     identity = ctx.outputs["identity"]
     pool = identity["UserPoolId"]
 
@@ -178,8 +165,6 @@ def wait_until_ready(ctx: Context, say: Callable[[str], None], timeout_minutes: 
         listing = ctx.cloud.kubectl_json("-n", namespace, "get", kind, check=False) or {"items": []}
         for item in listing["items"]:
             name = item["metadata"]["name"]
-            if name.endswith("-lic-ins"):
-                continue                                 # one-shot license installer, handled separately
             remaining = max(int(deadline - time.monotonic()), 30)
             say(f"  waiting for {kind}/{name}")
             result = ctx.cloud.kubectl("-n", namespace, "rollout", "status", f"{kind}/{name}",
@@ -187,75 +172,6 @@ def wait_until_ready(ctx: Context, say: Callable[[str], None], timeout_minutes: 
             if result.returncode != 0:
                 pending.append(f"{kind}/{name}")
     return pending
-
-
-def finish_license_installer(ctx: Context, say: Callable[[str], None], attempts: int = 30) -> None:
-    """The license installer must report OK once, then its Deployment is removed."""
-    if ctx.cloud.runner.dry_run:
-        return
-    namespace = ctx.release["helm_release"]["namespace"]
-    name = f"{ctx.release['helm_release']['name']}-lic-ins"
-    if ctx.cloud.kubectl("-n", namespace, "get", "deployment", name, check=False).returncode != 0:
-        return
-    say("  verifying the product license")
-    for _ in range(attempts):
-        pods = ctx.cloud.kubectl_json("-n", namespace, "get", "pods", check=False)
-        items = sorted((p for p in (pods or {}).get("items", []) if p["metadata"]["name"].startswith(name)),
-                       key=lambda p: p["metadata"]["creationTimestamp"])
-        if items:
-            logs = ctx.cloud.kubectl("-n", namespace, "logs", items[-1]["metadata"]["name"], check=False).stdout
-            lines = logs.splitlines()
-            for index, line in enumerate(lines):
-                if "Setting up..." in line and index + 1 < len(lines):
-                    outcome = lines[index + 1].strip()
-                    if outcome == "OK":
-                        ctx.cloud.kubectl("-n", namespace, "delete", "deployment", name, write=True)
-                        return
-                    raise InstallerError(f"License check failed: {outcome}",
-                                         "Make sure the AWS Marketplace subscription is active for this account.")
-        time.sleep(10)
-    raise InstallerError("License installer did not finish in time.",
-                         f"Inspect: kubectl --context {ctx.cloud.kube_context} -n {namespace} logs deploy/{name}")
-
-
-# Redis keys of the license store, as DIAL Core names them (hex of the key name), and the empty record {}
-# encrypted the way DIAL Core stores it. DIAL Core 0.45 refuses to start, or to onboard a user, without
-# these records, while the license installer of the same release only creates `licKey`.
-_EMPTY_RECORD = "o1Yr6cVaAt9aJf1QrhV6fg=="
-_LICENSE_RECORDS = {name: name.encode().hex() for name in ("apilicKey", "activeTiersKey")}
-
-
-def ensure_api_key_license(ctx: Context, say: Callable[[str], None]) -> None:
-    """Create the empty license records DIAL Core needs (API keys, activated tiers) when they are missing.
-    Idempotent: an existing record is never overwritten (SET ... NX)."""
-    if ctx.cloud.runner.dry_run:
-        return
-    namespace = ctx.release["helm_release"]["namespace"]
-    effective = values_pkg.effective(ctx, chart_defaults(ctx))
-    image = effective["lic-ins"]["image"]
-    reference = f"{image['registry']}/{image['repository']}:{image['tag']}"
-    host = ctx.outputs["cache"]["RedisEndpoint"].split("://")[-1].split(":")[0]
-    overrides = {"spec": {"nodeSelector": {"workload": "core"},
-                          "securityContext": {"runAsUser": 1001, "runAsNonRoot": True}}}
-    pod = "dial-license-init"
-    # Start it, wait for it to finish, then remove it. Attaching (`run -i --rm`) can hang on a pod that exits at once.
-    ctx.cloud.kubectl("-n", namespace, "delete", "pod", pod, "--ignore-not-found", "--wait=true", write=True, check=False)
-    started = ctx.cloud.kubectl(
-        "-n", namespace, "run", pod, "--image", reference, "--restart=Never", "--image-pull-policy=IfNotPresent",
-        "--overrides", json.dumps(overrides), "--command", "--",
-        "sh", "-c", "; ".join(f"redis-cli --tls -h {host} -p 6379 SET {key} {_EMPTY_RECORD} NX"
-                              for key in _LICENSE_RECORDS.values()),
-        write=True, check=False)
-    finished = started if started.returncode != 0 else ctx.cloud.kubectl(
-        "-n", namespace, "wait", f"pod/{pod}", "--for=jsonpath={.status.phase}=Succeeded", "--timeout=180s",
-        write=True, check=False)
-    logs = ctx.cloud.kubectl("-n", namespace, "logs", pod, check=False).stdout.strip()
-    ctx.cloud.kubectl("-n", namespace, "delete", "pod", pod, "--ignore-not-found", "--wait=false", write=True, check=False)
-    if finished.returncode != 0:
-        raise InstallerError("Could not prepare the license store.\n" + (finished.stderr or finished.stdout or logs).strip(),
-                             f"Check Redis access from the cluster: kubectl --context {ctx.cloud.kube_context} -n {namespace} "
-                             f"describe pod {pod}. Then run `./dial-install apply` again.")
-    say("  license store ready")
 
 
 def ingress_hostnames(ctx: Context) -> dict[str, str]:

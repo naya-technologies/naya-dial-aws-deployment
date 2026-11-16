@@ -1,8 +1,8 @@
-"""One-time creation of the PostgreSQL role DIAL Admin uses to sign in with its IAM role (database.auth: iam).
+"""Bootstrap the Core licensing database and, when enabled, the Admin IAM database role.
 
-A short Job runs `psql` inside the cluster (the database is private) as the master user, over a verified TLS connection, and
-makes the role: no password, member of rds_iam, owner of the Admin schema. Every statement is idempotent, so re-running it
-(for example on `upgrade`) is harmless. The master password reaches the Job through a temporary Secret, never a command line.
+A short Job runs inside the cluster as the master user over a verified TLS connection. Core can use its own
+JDBC/Flyway bootstrap command. The legacy mode continues to support older Core images.
+The Job reads the master password from a temporary Secret.
 """
 
 from __future__ import annotations
@@ -21,54 +21,60 @@ TIMEOUT_SECONDS = 180
 USER_PATTERN = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
 
 # Statements verified against Aurora PostgreSQL.
-SQL = r"""
-SELECT format('CREATE ROLE %I LOGIN', :'admin_user')
-WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'admin_user')
-\gexec
-SELECT format('ALTER ROLE %I PASSWORD NULL', :'admin_user')
-\gexec
-SELECT format('GRANT rds_iam TO %I', :'admin_user')
-\gexec
-SELECT format('GRANT CONNECT, TEMPORARY ON DATABASE %I TO %I', current_database(), :'admin_user')
-\gexec
-SELECT format('ALTER SCHEMA %I OWNER TO %I', :'admin_schema', :'admin_user')
-\gexec
-SELECT format('ALTER %s %I.%I OWNER TO %I',
-  CASE c.relkind WHEN 'r' THEN 'TABLE' WHEN 'p' THEN 'TABLE' WHEN 'S' THEN 'SEQUENCE' WHEN 'v' THEN 'VIEW'
-                 WHEN 'm' THEN 'MATERIALIZED VIEW' WHEN 'f' THEN 'FOREIGN TABLE' END,
-  n.nspname, c.relname, :'admin_user')
-FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-WHERE n.nspname = :'admin_schema' AND c.relkind IN ('r', 'p', 'S', 'v', 'm', 'f')
-  AND (c.relkind <> 'S' OR NOT EXISTS (
-        SELECT 1 FROM pg_depend d WHERE d.classid = 'pg_class'::regclass AND d.objid = c.oid
-          AND d.refclassid = 'pg_class'::regclass AND d.deptype IN ('a', 'i')))
-ORDER BY CASE c.relkind WHEN 'S' THEN 2 ELSE 1 END, c.relname
-\gexec
-SELECT format('ALTER %s %I.%I(%s) OWNER TO %I', CASE p.prokind WHEN 'p' THEN 'PROCEDURE' ELSE 'FUNCTION' END,
-  n.nspname, p.proname, pg_get_function_identity_arguments(p.oid), :'admin_user')
-FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-WHERE n.nspname = :'admin_schema' AND p.prokind IN ('f', 'p')
-\gexec
-SELECT format('ALTER %s %I.%I OWNER TO %I', CASE t.typtype WHEN 'd' THEN 'DOMAIN' ELSE 'TYPE' END,
-  n.nspname, t.typname, :'admin_user')
-FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
-WHERE n.nspname = :'admin_schema' AND t.typtype IN ('d', 'e')
-\gexec
-SELECT format('GRANT USAGE, CREATE ON SCHEMA %I TO %I', :'admin_schema', :'admin_user')
-\gexec
-SELECT format('GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA %I TO %I', :'admin_schema', :'admin_user')
-\gexec
-SELECT format('GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA %I TO %I', :'admin_schema', :'admin_user')
-\gexec
-SELECT format('GRANT ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA %I TO %I', :'admin_schema', :'admin_user')
-\gexec
-SELECT 'iam_role=' || rolname || ',login=' || rolcanlogin::text || ',password_cleared=true' ||
-       ',rds_iam=' || pg_has_role(rolname, 'rds_iam', 'member')::text
-FROM pg_roles WHERE rolname = :'admin_user';
-"""
+ADMIN_SQL_PATH = ROOT / "assets" / "admin-iam-bootstrap.sql"
 
-SCRIPT = ("psql --set=ON_ERROR_STOP=1 --set=admin_user=\"${ADMIN_DATABASE_USER}\" "
-          "--set=admin_schema=\"${ADMIN_DATABASE_SCHEMA}\" <<'SQL'\n" + SQL.strip() + "\nSQL\n")
+
+def admin_script() -> str:
+    schema = ADMIN_SQL_PATH.read_text(encoding="utf-8")
+    return (
+        "psql --set=ON_ERROR_STOP=1 --set=admin_user=\"${ADMIN_DATABASE_USER}\" "
+        "--set=admin_schema=\"${ADMIN_DATABASE_SCHEMA}\" <<'SQL'\n"
+        "SELECT set_config('dial_bootstrap.admin_user', :'admin_user', false);\n"
+        "SELECT set_config('dial_bootstrap.admin_schema', :'admin_schema', false);\n"
+        + schema + "\nSQL\n"
+    )
+
+
+def uses_postgres_licensing(values: dict) -> bool:
+    return values.get("dial", {}).get("core", {}).get("env", {}).get("aidial.licensing.store") == "postgres"
+
+
+def uses_jdbc_bootstrap(ctx: Context, effective_values: dict) -> bool:
+    chart_mode = effective_values.get("installer", {}).get("coreDatabaseBootstrap", "legacy")
+    mode = ctx.cfg["database"].get("core_bootstrap", chart_mode)
+    return uses_postgres_licensing(effective_values) and mode == "jdbc"
+
+
+def requires_psql(ctx: Context, effective_values: dict) -> bool:
+    needed = uses_postgres_licensing(effective_values) or ctx.cfg["database"]["auth"] == "iam"
+    return needed and not uses_jdbc_bootstrap(ctx, effective_values)
+
+
+def core_script() -> str:
+    schema = (ROOT / "assets" / "core-licensing.sql").read_text(encoding="utf-8")
+    return r"""psql --set=ON_ERROR_STOP=1 <<'SQL'
+SELECT 'CREATE DATABASE dialcore' WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'dialcore')
+\gexec
+SELECT 'CREATE ROLE dial_core_licensing_iam LOGIN'
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'dial_core_licensing_iam')
+\gexec
+GRANT rds_iam TO dial_core_licensing_iam;
+GRANT CONNECT ON DATABASE dialcore TO dial_core_licensing_iam;
+\connect dialcore
+BEGIN;
+DO $guard$
+BEGIN
+    IF to_regclass('dial_licensing.scopes') IS NOT NULL THEN
+        RAISE EXCEPTION 'Legacy Core licensing schema; upgrade it before deploying this chart';
+    END IF;
+END;
+$guard$;
+""" + schema + """
+GRANT USAGE ON SCHEMA dial_licensing TO dial_core_licensing_iam;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA dial_licensing TO dial_core_licensing_iam;
+COMMIT;
+SQL
+"""
 
 
 def pinned_image(ctx: Context, host: str) -> str:
@@ -84,14 +90,65 @@ def image(ctx: Context, effective_values: dict | None = None) -> str:
     return ctx.cfg["database"].get("bootstrap_image") or pinned_image(ctx, placeholders.image_registry(ctx))
 
 
-def manifests(ctx: Context, bootstrap_image: str) -> dict[str, dict]:
+def manifests(
+    ctx: Context, bootstrap_image: str, *, core: bool = False, admin: bool = True, core_image: str | None = None
+) -> dict[str, dict]:
     namespace = ctx.release["helm_release"]["namespace"]
     database = ctx.outputs["database"]
     user = ctx.cfg["database"]["iam_user"]
-    if not USER_PATTERN.match(user):
+    if admin and not USER_PATTERN.match(user):
         raise InstallerError(f"database.iam_user {user!r} is not a lowercase PostgreSQL identifier.")
     labels = {"app.kubernetes.io/name": NAME}
     ca = (ROOT / "assets" / "aws-rds-global-bundle.pem").read_text(encoding="utf-8")
+    environment = [
+        {"name": "PGUSER", "value": "postgres"},
+        {"name": "PGPASSWORD", "valueFrom": {"secretKeyRef": {"name": f"{NAME}-db", "key": "password"}}},
+        {"name": "PGSSLMODE", "value": "verify-full"},
+        {"name": "PGSSLROOTCERT", "value": "/rds-ca/aws-rds-bundle.crt"},
+    ]
+    security = {
+        "allowPrivilegeEscalation": False, "readOnlyRootFilesystem": True, "capabilities": {"drop": ["ALL"]},
+    }
+    mounts = [
+        {"name": "rds-ca", "mountPath": "/rds-ca", "readOnly": True},
+        {"name": "tmp", "mountPath": "/tmp"},
+    ]
+    admin_environment = [
+        {"name": "ADMIN_DATABASE_USER", "value": user},
+        {"name": "ADMIN_DATABASE_SCHEMA", "value": "public"},
+    ]
+    ca_files = {"aws-rds-bundle.crt": ca}
+    containers = []
+    if core_image:
+        port = database.get("DBPort", "5432")
+        url = f"jdbc:postgresql://{database['DBEndpoint']}:{port}/postgres"
+        core_environment = [*environment, {"name": "CORE_BOOTSTRAP_URL", "value": url}]
+        if admin:
+            core_environment.extend([*admin_environment, {"name": "ADMIN_BOOTSTRAP_DATABASE", "value": database["DBName"]}])
+            ca_files["admin-iam-bootstrap.sql"] = ADMIN_SQL_PATH.read_text(encoding="utf-8")
+        containers.append({
+            "name": "core-licensing", "image": core_image, "imagePullPolicy": "IfNotPresent",
+            "securityContext": {**security, "runAsUser": 1001, "runAsGroup": 1001},
+            "env": core_environment,
+            "volumeMounts": mounts,
+            "command": ["java", "-cp", "/app/lib/*"],
+            "args": ["com.epam.aidial.core.server.security.LicensingDatabaseBootstrap"],
+        })
+    elif core or admin:
+        containers.append({
+            "name": "psql", "image": bootstrap_image, "imagePullPolicy": "IfNotPresent",
+            "securityContext": security,
+            "env": [
+                *environment,
+                {"name": "PGHOST", "value": database["DBEndpoint"]},
+                {"name": "PGPORT", "value": str(database.get("DBPort", "5432"))},
+                {"name": "PGDATABASE", "value": database["DBName"]},
+                *admin_environment,
+            ],
+            "volumeMounts": mounts,
+            "command": ["/bin/sh", "-ec"],
+            "args": [(core_script() if core else "") + (admin_script() if admin else "")],
+        })
     return {
         "secret": {
             "apiVersion": "v1", "kind": "Secret", "type": "Opaque",
@@ -101,7 +158,7 @@ def manifests(ctx: Context, bootstrap_image: str) -> dict[str, dict]:
         "configmap": {
             "apiVersion": "v1", "kind": "ConfigMap",
             "metadata": {"name": f"{NAME}-ca", "namespace": namespace, "labels": labels},
-            "data": {"aws-rds-bundle.crt": ca},
+            "data": ca_files,
         },
         "job": {
             "apiVersion": "batch/v1", "kind": "Job",
@@ -114,26 +171,7 @@ def manifests(ctx: Context, bootstrap_image: str) -> dict[str, dict]:
                         "automountServiceAccountToken": False, "restartPolicy": "Never",
                         "securityContext": {"runAsNonRoot": True, "runAsUser": 70, "runAsGroup": 70,
                                             "seccompProfile": {"type": "RuntimeDefault"}},
-                        "containers": [{
-                            "name": "psql", "image": bootstrap_image, "imagePullPolicy": "IfNotPresent",
-                            "securityContext": {"allowPrivilegeEscalation": False, "readOnlyRootFilesystem": True,
-                                                "capabilities": {"drop": ["ALL"]}},
-                            "env": [
-                                {"name": "PGHOST", "value": database["DBEndpoint"]},
-                                {"name": "PGPORT", "value": str(database.get("DBPort", "5432"))},
-                                {"name": "PGDATABASE", "value": database["DBName"]},
-                                {"name": "PGUSER", "value": "postgres"},
-                                {"name": "PGPASSWORD", "valueFrom": {"secretKeyRef": {"name": f"{NAME}-db", "key": "password"}}},
-                                {"name": "PGSSLMODE", "value": "verify-full"},
-                                {"name": "PGSSLROOTCERT", "value": "/rds-ca/aws-rds-bundle.crt"},
-                                {"name": "ADMIN_DATABASE_USER", "value": user},
-                                {"name": "ADMIN_DATABASE_SCHEMA", "value": "public"},
-                            ],
-                            "volumeMounts": [{"name": "rds-ca", "mountPath": "/rds-ca", "readOnly": True},
-                                             {"name": "tmp", "mountPath": "/tmp"}],
-                            "command": ["/bin/sh", "-ec"],
-                            "args": [SCRIPT],
-                        }],
+                        "containers": containers,
                         "volumes": [{"name": "rds-ca", "configMap": {"name": f"{NAME}-ca"}}, {"name": "tmp", "emptyDir": {}}],
                     },
                 },
@@ -145,8 +183,18 @@ def manifests(ctx: Context, bootstrap_image: str) -> dict[str, dict]:
 def run(ctx: Context, effective_values: dict, say: Callable[[str], None]) -> None:
     kube = ctx.cloud.kubectl
     namespace = ctx.release["helm_release"]["namespace"]
-    docs = manifests(ctx, image(ctx, effective_values))
-    say(f"  Creating the PostgreSQL role '{ctx.cfg['database']['iam_user']}' for the IAM login")
+    core = uses_postgres_licensing(effective_values)
+    admin = ctx.cfg["database"]["auth"] == "iam"
+    core_image = None
+    if uses_jdbc_bootstrap(ctx, effective_values):
+        core_image_values = effective_values["dial"]["core"]["image"]
+        core_image = f"{core_image_values['registry']}/{core_image_values['repository']}:{core_image_values['tag']}"
+    bootstrap_image = image(ctx, effective_values) if requires_psql(ctx, effective_values) else ""
+    docs = manifests(ctx, bootstrap_image, core=core, admin=admin, core_image=core_image)
+    if core:
+        say("  Provisioning dialcore and its IAM database role")
+    if admin:
+        say(f"  Creating the PostgreSQL role '{ctx.cfg['database']['iam_user']}' for the IAM login")
 
     def cleanup() -> None:
         for kind in ("job", "secret", "configmap"):
@@ -162,7 +210,7 @@ def run(ctx: Context, effective_values: dict, say: Callable[[str], None]) -> Non
         logs = kube("-n", namespace, "logs", f"job/{NAME}", "--all-containers=true", "--tail=200", write=True, check=False)
         if waited.returncode != 0:
             raise InstallerError(
-                "Creating the database role for the IAM login failed.\n" + (logs.stdout or logs.stderr or waited.stderr).strip(),
+                "Preparing the PostgreSQL databases failed.\n" + (logs.stdout or logs.stderr or waited.stderr).strip(),
                 "Check that the database is reachable from the cluster and that the bootstrap image can be pulled "
                 f"(kubectl --context {ctx.cloud.kube_context} -n {namespace} describe job/{NAME}).",
             )

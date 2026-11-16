@@ -1,4 +1,4 @@
-{{- if .Values.adminRdsIam.caBundle.enabled }}
+{{- if or .Values.adminRdsIam.caBundle.enabled (eq (index .Values.dial.core.env "aidial.licensing.store") "postgres") }}
 apiVersion: v1
 kind: ConfigMap
 metadata:

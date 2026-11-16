@@ -36,8 +36,9 @@ class ConfigTests(Base):
         raw = {"apiVersion": "dial/v1", "name": "acme", "aws": {"region": "us-east-1"},
                "domain": {"base": "dial.acme.example", "certificate_arn": "arn:aws:acm:us-east-1:123456789012:certificate/x"},
                "secrets": {"arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:s-AbCdEf"}}
-        self.assertEqual(validate({**raw, "database": {"auth": "iam", "iam_user": "dial_admin_iam"}}, schema), [])
+        self.assertEqual(validate({**raw, "database": {"auth": "iam", "iam_user": "dial_admin_iam", "core_bootstrap": "jdbc"}}, schema), [])
         self.assertTrue(validate({**raw, "database": {"auth": "kerberos"}}, schema))
+        self.assertTrue(validate({**raw, "database": {"core_bootstrap": "unknown"}}, schema))
         self.assertTrue(validate({**raw, "database": {"iam_user": "Bad-Name"}}, schema))
 
     def test_the_iam_stack_authorises_the_same_database_user(self):
@@ -82,7 +83,7 @@ class ValuesTests(Base):
 
     def test_the_chart_itself_names_only_repositories_of_the_listing(self):
         """The Marketplace may scan the chart for images: the optional bootstrap image lives in the release manifest instead."""
-        self.assertNotIn("naya-dial-postgres", CHART_CHARTS_TEXT)
+        self.assertNotRegex(CHART_CHARTS_TEXT, r"naya-dial-postgres[:@]")
 
     def test_the_profile_never_reaches_helm(self):
         self.assertNotIn("installer", values.build(iam_ctx(), CHART_VALUES))
@@ -141,10 +142,10 @@ class RenderedChartTests(Base):
         holders = {d["metadata"]["name"] for d in docs if self.holds(d, password)}
         self.assertEqual(holders, {"dial-deployment-manager", "dial-superset"})
 
-    def test_password_mode_creates_no_ca_bundle_and_keeps_the_password(self):
+    def test_admin_password_mode_keeps_its_password_and_renders_the_core_ca(self):
         ctx = make_ctx()
         docs = self.render(ctx)
-        self.assertFalse([d for d in docs if d["kind"] == "ConfigMap" and d["metadata"]["name"] == "dial-admin-rds-ca"])
+        self.assertTrue(any(d["kind"] == "ConfigMap" and d["metadata"]["name"] == "dial-admin-rds-ca" for d in docs))
         holders = {d["metadata"]["name"] for d in docs if self.holds(d, ctx.secret["db_master_password"])}
         # also the positive control for the IAM-mode check above: the same search does find the password here
         self.assertEqual(holders, {"dial-admin-externaldb", "dial-deployment-manager", "dial-superset"})
@@ -184,6 +185,40 @@ class BootstrapJobTests(Base):
         self.assertFalse(container["securityContext"]["allowPrivilegeEscalation"])
         for statement in ("CREATE ROLE", "PASSWORD NULL", "GRANT rds_iam", "ALTER SCHEMA", "GRANT USAGE, CREATE ON SCHEMA"):
             self.assertIn(statement, container["args"][0])
+
+    def test_jdbc_core_uses_the_effective_core_image_and_the_temporary_secret(self):
+        ctx = make_ctx()
+        effective = values.effective(ctx, CHART_VALUES)
+        self.assertFalse(db_bootstrap.requires_psql(ctx, effective))
+        core = effective["dial"]["core"]["image"]
+        expected = f"{core['registry']}/{core['repository']}:{core['tag']}"
+        rendered = db_bootstrap.manifests(ctx, "", core=True, admin=False, core_image=expected)
+        with mock.patch.object(db_bootstrap, "manifests", return_value=rendered) as manifests:
+            self.run_bootstrap(ctx=ctx)
+        manifests.assert_called_once_with(ctx, "", core=True, admin=False, core_image=expected)
+        docs = rendered
+        containers = docs["job"]["spec"]["template"]["spec"]["containers"]
+        self.assertEqual(len(containers), 1)
+        container = containers[0]
+        self.assertEqual(container["image"], expected)
+        self.assertEqual(container["command"], ["java", "-cp", "/app/lib/*"])
+        self.assertTrue(container["args"][0].endswith(".LicensingDatabaseBootstrap"))
+        env = {entry["name"]: entry for entry in container["env"]}
+        self.assertTrue(env["CORE_BOOTSTRAP_URL"]["value"].endswith("/postgres"))
+        self.assertIn("secretKeyRef", env["PGPASSWORD"]["valueFrom"])
+        self.assertNotIn(ctx.secret["db_master_password"], yaml.safe_dump(docs["job"]))
+
+    def test_jdbc_core_also_provisions_the_admin_iam_login_without_psql(self):
+        ctx = iam_ctx()
+        effective = values.effective(ctx, CHART_VALUES)
+        self.assertFalse(db_bootstrap.requires_psql(ctx, effective))
+        docs = db_bootstrap.manifests(ctx, "", core=True, admin=True, core_image="registry/core:jdbc")
+        containers = docs["job"]["spec"]["template"]["spec"]["containers"]
+        self.assertEqual([c["name"] for c in containers], ["core-licensing"])
+        env = {entry["name"]: entry["value"] for entry in containers[0]["env"] if "value" in entry}
+        self.assertEqual(env["ADMIN_BOOTSTRAP_DATABASE"], "dialadmin")
+        self.assertEqual(env["ADMIN_DATABASE_USER"], "dial_admin_iam")
+        self.assertIn("GRANT rds_iam", docs["configmap"]["data"]["admin-iam-bootstrap.sql"])
 
     def test_the_bundled_ca_matches_the_chart_bundle(self):
         self.assertEqual((ROOT / "assets" / "aws-rds-global-bundle.pem").read_bytes(),
@@ -234,9 +269,11 @@ class HookTests(Base):
     def module(self, ctx):
         return next(m for m in modules.select(ctx.cfg) if m.slot == "database")
 
-    def test_nothing_runs_in_password_mode(self):
+    def test_nothing_runs_when_neither_service_uses_iam(self):
         ctx = make_ctx()
-        ctx.cloud.runner = FakeRunner({("helm", "show", "values"): Result(0, CHART_VALUES_TEXT)})
+        chart = yaml.safe_load(CHART_VALUES_TEXT)
+        chart["dial"]["core"]["env"].pop("aidial.licensing.store")
+        ctx.cloud.runner = FakeRunner({("helm", "show", "values"): Result(0, yaml.safe_dump(chart))})
         self.module(ctx).before_helm(ctx, lambda _m: None)
         self.assertEqual(ctx.cloud.runner.writes, [])
 
@@ -279,9 +316,13 @@ class FlowTests(Base):
         self.assertLess(autoscaler, job)
         self.assertLess(job, platform)
 
-    def test_password_mode_runs_no_database_job(self):
+    def test_admin_password_mode_still_bootstraps_core(self):
         runner = self.apply({})
-        self.assertFalse([w for w in runner.writes if "dial-admin-rds-iam-bootstrap" in " ".join(w)])
+        self.assertTrue(any("wait" in w and "job/dial-admin-rds-iam-bootstrap" in w for w in runner.writes))
+        script = db_bootstrap.manifests(make_ctx(), "img", core=True, admin=False)["job"]
+        args = script["spec"]["template"]["spec"]["containers"][0]["args"][0]
+        self.assertIn("CREATE DATABASE dialcore", args)
+        self.assertNotIn("--set=admin_user=", args)
 
     def test_the_password_is_sent_through_stdin_only(self):
         runner = self.apply({"auth": "iam"})
@@ -293,18 +334,30 @@ class MirrorTests(Base):
     @unittest.skipUnless(HAVE_HELM, "helm is not installed")
     def test_the_bootstrap_image_is_copied_only_when_it_is_used(self):
         from test_mirror import runner_for, TOTAL
-        for cfg, expected in ((resolved(), TOTAL), (resolved(database={"auth": "iam"}), TOTAL + 1),
-                              (resolved(database={"auth": "iam", "bootstrap_image": "x/y:1"}), TOTAL)):
+        for cfg, expected in (
+            (resolved(), TOTAL),
+            (resolved(database={"auth": "iam"}), TOTAL),
+            (resolved(database={"auth": "iam", "core_bootstrap": "legacy"}), TOTAL + 1),
+            (resolved(database={"auth": "iam", "core_bootstrap": "legacy", "bootstrap_image": "x/y:1"}), TOTAL),
+        ):
             ctx = make_ctx(cfg=cfg)
             ctx.cloud.runner = runner_for()
             images = mirror.discover(ctx, CHART_VALUES)
             self.assertEqual(len(images), expected)
-        self.assertTrue(any("naya-dial-postgres" in i for i in mirror.discover(_ctx_iam(), CHART_VALUES)))
+        self.assertTrue(any("naya-dial-postgres" in i for i in mirror.discover(_ctx_iam(core_bootstrap="legacy"), CHART_VALUES)))
+
+    def test_jdbc_core_does_not_need_the_postgres_bootstrap_image(self):
+        from test_mirror import runner_for
+        for auth in ("password", "iam"):
+            with self.subTest(auth=auth):
+                ctx = make_ctx(cfg=resolved(database={"auth": auth, "core_bootstrap": "jdbc"}))
+                ctx.cloud.runner = runner_for()
+                self.assertFalse(any("naya-dial-postgres:" in image for image in mirror.discover(ctx, CHART_VALUES)))
 
 
-def _ctx_iam():
+def _ctx_iam(**database):
     from test_mirror import runner_for
-    ctx = iam_ctx()
+    ctx = iam_ctx(**database)
     ctx.cloud.runner = runner_for()
     return ctx
 

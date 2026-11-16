@@ -2,7 +2,7 @@
 
 | Chart | Installed by | Purpose |
 |---|---|---|
-| `dial-platform` (published as `naya-helm-deployment`) | `dial-install` from the AWS Marketplace registry | Everything DIAL runs: Core, Chat, Admin, Themes, Bedrock adapter, QuickApps, App Controller, Deployment Manager, analytics (InfluxDB, Grafana, Superset), load balancer controller, license installer |
+| `dial-platform` (published as `naya-helm-deployment`) | `dial-install` from the AWS Marketplace registry | Everything DIAL runs: Core, Chat, Admin, Themes, Bedrock adapter, QuickApps, App Controller, Deployment Manager, analytics (InfluxDB, Grafana, Superset), load balancer controller |
 | `dial-cluster-base` | `dial-install` from inside the installer package | Cluster prerequisites: namespace, gp3 storage class, App Controller permissions, load balancer controller CRDs |
 
 Cluster add-ons that come from upstream (Cluster Autoscaler, Knative, Istio) are installed by the installer at the
@@ -15,7 +15,7 @@ DIAL is installed as **two Helm releases, on purpose**. The rule: what belongs t
 
 | | `dial-cluster-base` | `dial-platform` |
 |---|---|---|
-| Contents | Namespace, gp3 StorageClass, App Controller Role/RoleBinding, load balancer controller CRDs | Every DIAL component, ingresses, analytics, license installer |
+| Contents | Namespace, gp3 StorageClass, App Controller Role/RoleBinding, load balancer controller CRDs | Every DIAL component, ingresses, analytics |
 | Lifetime | Long. Resources carry `helm.sh/resource-policy: keep`. | Short. Upgraded, rolled back, even removed and reinstalled. |
 | Shipped | Inside the installer package | Marketplace registry, validated by AWS with its default values |
 | Installed | First, before Knative/Istio and DIAL | After the cluster base and the add-ons exist |
@@ -74,8 +74,12 @@ account, publish the images and chart there and change `registry.source` (instal
 
 `installer.profiles.<name>.values` holds value sets that `dial-install` merges on request. Today: `rdsIam`, used with
 `database.auth: iam` - DIAL Admin signs in to the database with its IAM role (service account annotation, `datasourceAuth: aws`,
-CA bundle mount, no password). The image (with `psql`) of the one-time Job that creates the PostgreSQL role is pinned in the
-release manifest (`addons.rds_iam_bootstrap_image`), not in the chart, so the chart references only repositories of the listing.
+CA bundle mount, no password).
+
+`installer.coreDatabaseBootstrap: jdbc` runs database provisioning and Flyway
+before Helm, using the Core image selected in the chart. The same Job prepares
+the Admin IAM login when enabled. Legacy bootstrap uses the PostgreSQL client
+image pinned in the release manifest (`addons.rds_iam_bootstrap_image`).
 
 Never put a real secret, an account id, a region or a host name in `values.yaml`.
 

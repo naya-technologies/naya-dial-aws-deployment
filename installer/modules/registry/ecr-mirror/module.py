@@ -22,16 +22,18 @@ def check(ctx):
                                 "Your AWS user needs ECR permissions (ecr:DescribeRepositories, ecr:CreateRepository, "
                                 "ecr:PutImage and the layer upload actions).")]
     try:
-        images = mirror.discover(ctx, deploy.chart_defaults(ctx))
+        chart_values = deploy.chart_defaults(ctx)
+        images = mirror.discover(ctx, chart_values)
     except Exception as error:  # noqa: BLE001 - reported as a finding, not a crash
         return findings + [warn("registry", f"could not list the images of this release ({error})")]
-    absent = mirror.missing(ctx, images)
+    preloaded = tuple(chart_values.get("installer", {}).get("preloadedImages", ()))
+    absent = mirror.missing(ctx, images, preloaded)
     if absent:
-        findings.append(fail("registry", f"{len(absent)} of {len(images)} images are not available in the Marketplace registry",
+        findings.append(fail("registry", f"{len(absent)} of {len(images)} images are not available in their required registry",
                              "Missing or not entitled:\n" + "\n".join(f"  {image}" for image in absent) +
-                             "\nCheck the Marketplace subscription; if this is your own release, fix the tags in the release manifest."))
+                             "\nCheck the Marketplace subscription and publish any declared preloaded builds into your own ECR."))
     else:
-        findings.append(ok("registry", f"{len(images)} images are available and will be copied to {mirror.target_host(ctx)} "
+        findings.append(ok("registry", f"{len(images)} images are available for {mirror.target_host(ctx)} "
                                        "(images already there are skipped)"))
     return findings
 
@@ -40,7 +42,8 @@ def before_platform(ctx, say):
     chart_values = deploy.chart_defaults(ctx)
     images = mirror.discover(ctx, chart_values)
     say(f"  {len(images)} images to place in {mirror.target_host(ctx)}")
-    copied, skipped = mirror.copy_images(ctx, images, say)
+    preloaded = tuple(chart_values.get("installer", {}).get("preloadedImages", ()))
+    copied, skipped = mirror.copy_images(ctx, images, say, preloaded)
     say(f"  images: {copied} copied, {skipped} already present")
     left = mirror.outside_registry(ctx, chart_values) if not ctx.cloud.runner.dry_run else []
     if left:

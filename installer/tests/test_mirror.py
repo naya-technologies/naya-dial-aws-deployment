@@ -20,8 +20,8 @@ from test_workflow import SOURCE_HOST, crane_copy, crane_digest, MIRRORED, real_
 CHART_VALUES = yaml.safe_load(CHART_VALUES_TEXT)
 TARGET = "123456789012.dkr.ecr.us-east-1.amazonaws.com"
 HAVE_HELM = shutil.which("helm") is not None
-WORKLOADS, IN_VALUES, ADDONS = 19, 15, 10      # pod images / images named in values (build tools, ...) / add-on images
-TOTAL = WORKLOADS + IN_VALUES + ADDONS
+ADDONS = 10
+TOTAL = 43  # platform and add-ons
 
 
 # The repositories published in the Marketplace listing (provided by the vendor).
@@ -79,9 +79,10 @@ class DiscoveryTests(Base):
         self.assertEqual(len(images), TOTAL)
         self.assertTrue(all(i.startswith(SOURCE_HOST + "/") for i in images))
         names = " ".join(images)
+        self.assertNotIn("naya-dial-lic-ins:", names)
         for expected in ("naya-dial-core:", "naya-dial-ui:", "naya-dial-admin-backend:", "naya-dial-superset:",
                          "naya-dial-deployment-manager:", "naya-dial-code-interpreter:", "naya-dial-alb-controllers:",
-                         "naya-dial-lic-ins:", "naya-dial-influxdb:", "naya-dial-buildkit:2026.10.1-rootless", "naya-dial-syft:",
+                         "naya-dial-influxdb:", "naya-dial-buildkit:2026.10.1-rootless", "naya-dial-syft:",
                          "naya-dial-skopeo:", "naya-dial-git:", "naya-dial-mcp-proxy:2026.10.1-alpine", "naya-dial-app-builder-python:",
                          "naya-dial-cluster-autoscaler:2026.10.1", "naya-dial-istio-pilot:2026.10.1", "naya-dial-istio-proxyv2:2026.10.1",
                          "naya-dial-ui:", "naya-dial-kaniko-executor:", "naya-dial-python:",
@@ -101,6 +102,8 @@ class DiscoveryTests(Base):
         images = mirror.discover(context(), CHART_VALUES)
         for image in images:
             repository = image.removeprefix(SOURCE_HOST + "/").rsplit(":", 1)[0]
+            if mirror._preloaded(image, tuple(CHART_VALUES["installer"]["preloadedImages"])):
+                continue
             self.assertIn(repository, listed, f"{image}: no such repository in the Marketplace registry")
 
     def test_every_workload_image_comes_from_the_configured_registry(self):
@@ -224,15 +227,20 @@ class ToolTests(Base):
             info.size = 3
             archive.addfile(info, io.BytesIO(b"bin"))
         data = buffer.getvalue()
-        name = "go-containerregistry_Linux_x86_64.tar.gz"
-        good = f"{hashlib.sha256(data).hexdigest()}  {name}\n".encode()
-        bad = f"{'0' * 64}  {name}\n".encode()
-        with mock.patch.object(tools, "machine_arch", return_value="amd64"), \
-                mock.patch.object(tools, "BIN_DIR", Path(__import__("tempfile").mkdtemp())):
-            with mock.patch.object(tools, "_fetch", side_effect=[data, bad]), self.assertRaises(InstallerError):
-                tools.install_crane("v0.22.1")
-            with mock.patch.object(tools, "_fetch", side_effect=[data, good]):
-                self.assertEqual(tools.install_crane("v0.22.1").read_bytes(), b"bin")
+        for os_name in ("Linux", "Darwin"):
+            name = f"go-containerregistry_{os_name}_x86_64.tar.gz"
+            good = f"{hashlib.sha256(data).hexdigest()}  {name}\n".encode()
+            bad = f"{'0' * 64}  {name}\n".encode()
+            with self.subTest(os_name=os_name), tempfile.TemporaryDirectory() as directory, \
+                    mock.patch.object(tools, "machine_arch", return_value="amd64"), \
+                    mock.patch.object(tools.platform, "system", return_value=os_name), \
+                    mock.patch.object(tools, "BIN_DIR", Path(directory)):
+                with mock.patch.object(tools, "_fetch", side_effect=[data, bad]), self.assertRaises(InstallerError):
+                    tools.install_crane("v0.22.1")
+                with mock.patch.object(tools, "_fetch", side_effect=[data, good]) as fetch:
+                    self.assertEqual(tools.install_crane("v0.22.1").read_bytes(), b"bin")
+                    self.assertTrue(fetch.call_args_list[0].args[0].endswith("/" + name))
+
 
 
 class ModuleSelectionTests(Base):
@@ -464,7 +472,8 @@ class RegistryInventoryTests(Base):
     def images(self, **database):
         ctx = make_ctx(cfg=resolved(database=database) if database else resolved())
         ctx.cloud.runner = runner_for()
-        return mirror.discover(ctx, CHART_VALUES)
+        preloaded = tuple(CHART_VALUES["installer"]["preloadedImages"])
+        return [ref for ref in mirror.discover(ctx, CHART_VALUES) if not mirror._preloaded(ref, preloaded)]
 
     def missing(self, images):
         absent = []
@@ -493,9 +502,21 @@ class RegistryInventoryTests(Base):
     def test_the_inventory_is_complete_for_the_listing(self):
         self.assertEqual(set(INVENTORY), set(MARKETPLACE_REPOSITORIES.split()) and {r.split("/")[-1] for r in MARKETPLACE_REPOSITORIES.split()})
 
-    def test_the_only_gap_is_the_optional_database_bootstrap_image(self):
-        gap = self.missing(self.images(auth="iam"))
-        self.assertEqual([i.rsplit("/", 1)[1] for i in gap], ["naya-dial-postgres:15-alpine"])
+    def test_the_legacy_bootstrap_image_is_preloaded(self):
+        ctx = context()
+        ctx.cfg["database"]["core_bootstrap"] = "legacy"
+        bootstrap = [ref for ref in mirror.discover(ctx, CHART_VALUES) if "naya-dial-postgres" in ref]
+        self.assertEqual(len(bootstrap), 1)
+        preloaded = tuple(CHART_VALUES["installer"]["preloadedImages"])
+        target = bootstrap[0].replace(SOURCE_HOST, TARGET)
+        with mock.patch.object(tools, "which", return_value="/usr/bin/crane"):
+            self.assertEqual(mirror.missing(ctx, bootstrap, preloaded), [target])
+            with self.assertRaisesRegex(InstallerError, "Missing preloaded image"):
+                mirror.copy_images(ctx, bootstrap, Say(), preloaded)
+            MIRRORED.add(target)
+            self.assertEqual(mirror.missing(ctx, bootstrap, preloaded), [])
+            self.assertEqual(mirror.copy_images(ctx, bootstrap, Say(), preloaded), (0, 1))
+        self.assertFalse(ctx.cloud.runner.called("/usr/bin/crane", "copy"))
 
     def test_the_chart_tag_is_free_in_the_chart_repository(self):
         self.assertNotIn("2026.10.4", INVENTORY["naya-helm-deployment"])

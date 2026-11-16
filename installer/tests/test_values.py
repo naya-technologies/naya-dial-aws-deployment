@@ -307,9 +307,6 @@ class BuiltValuesTests(Base):
         for key in ("builder-root-image", "builder-rootless-image", "analyser-image", "copy-image"):
             self.assertTrue(document["app"][key].startswith("123456789012.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-dial-"), key)
 
-    def test_license_installer_gets_the_redis_host_only(self):
-        self.assertEqual(self.built["lic-ins"]["env"]["REDIS_HOST"], "cache.example.use1.cache.amazonaws.com")
-
     def test_superset_database_uri_escapes_password(self):
         ctx = make_ctx()
         ctx.secret["db_master_password"] = "p@ss/w:rd"
@@ -395,7 +392,7 @@ class RealHelmTests(Base):
 
     def test_admin_reads_core_in_the_schema_version_of_the_core_image(self):
         """Admin shows every model as OUT OF SYNC when CORE_CONFIG_VERSION is older than the dial-core it manages."""
-        core_server_version = {"2026.10.2": "0.45.7"}                 # dial-core image tag -> server (config schema) version
+        core_server_version = {"postgres-licensing-7": "0.45.7"}                 # dial-core image tag -> server (config schema) version
         tag = CHART_VALUES["dial"]["core"]["image"]["tag"]
         self.assertIn(tag, core_server_version, f"dial-core {tag}: add its server version to this table")
         env = CHART_VALUES["admin"]["backend"]["env"]
@@ -411,6 +408,24 @@ class RealHelmTests(Base):
         left = sorted(set(re.findall(r"PLACEHOLDER_[A-Z0-9_]+", text)))
         self.assertEqual(left, [])
 
+    def test_core_licensing_uses_private_postgres_and_admin_uses_the_core_service(self):
+        _, docs = self.render_platform()
+        deployments = {d["metadata"]["name"]: d for d in docs if d["kind"] == "Deployment"}
+        core = deployments["dial-core"]["spec"]["template"]["spec"]
+        core_container = core["containers"][0]
+        env = {entry["name"]: entry.get("value") for entry in core_container["env"]}
+        self.assertRegex(env["aidial.licensing.postgres.url"], r"^jdbc:postgresql://[^/]+:5432/dialcore$")
+        self.assertEqual(env["aidial.licensing.postgres.sslMode"], "verify-full")
+        self.assertEqual(env["aidial.licensing.refreshPeriodMillis"], "1800000")
+        self.assertIn({"name": "licensing-rds-ca", "mountPath": "/mnt/licensing-rds-ca", "readOnly": True},
+                      core_container["volumeMounts"])
+        admin = deployments["dial-admin-backend"]["spec"]["template"]["spec"]["containers"][0]
+        env = {entry["name"]: entry.get("value") for entry in admin["env"]}
+        self.assertEqual(env["CORE_CLIENT_URL"], "http://dial-core.dial.svc.cluster.local")
+        service = next(d for d in docs if d["kind"] == "Service" and d["metadata"]["name"] == "dial-core")
+        self.assertEqual(service["spec"]["type"], "ClusterIP")
+        self.assertEqual(service["spec"]["ports"][0]["port"], 80)
+
     def test_rendered_ingresses(self):
         _, docs = self.render_platform()
         ingresses = [d for d in docs if d["kind"] == "Ingress"]
@@ -425,8 +440,9 @@ class RealHelmTests(Base):
         _, docs = self.render_platform()
         names = {d["metadata"]["name"] for d in docs if d["kind"] == "Deployment"}
         for expected in ("dial-core", "dial-chat", "dial-admin-backend", "dial-frontend", "dial-themes",
-                         "dial-bedrock", "dial-quickapps", "dial-app-controller", "dial-lic-ins", "dial-flows-core", "dial-flows"):
+                         "dial-bedrock", "dial-quickapps", "dial-app-controller", "dial-flows-core", "dial-flows"):
             self.assertIn(expected, names)
+        self.assertNotIn("dial-lic-ins", names)
 
     def test_disabling_features_removes_their_workloads(self):
         ctx = make_ctx(cfg=resolved(features={"analytics": False, "deployment_manager": False}))
@@ -549,7 +565,11 @@ class MarketplaceListTests(Base):
                 found.update(re.findall(re.escape(host) + r"/[A-Za-z0-9._/-]+:[A-Za-z0-9._-]+", node))
 
         walk(CHART_VALUES)
-        return found
+        return self.vendor_images(found)
+
+    def vendor_images(self, refs):
+        preloaded = CHART_VALUES["installer"].get("preloadedImages", [])
+        return {ref for ref in refs if ref.rsplit("/", 1)[-1].split(":")[0] not in preloaded}
 
     def listed(self):
         return [line.strip() for line in self.LIST.read_text().splitlines() if line.strip()]
@@ -564,7 +584,7 @@ class MarketplaceListTests(Base):
     def test_the_list_holds_the_chart_and_nothing_that_is_unused(self):
         listed = self.listed()
         self.assertTrue(listed[0].endswith("/naya-helm-deployment:2026.10.4"))
-        unused = set(listed[1:]) - self.static_images()
+        unused = self.vendor_images(listed[1:]) - self.static_images()
         self.assertEqual(unused, set(), "listed images that no values.yaml entry refers to")
 
     def test_every_listed_reference_exists_in_the_registry_inventory(self):

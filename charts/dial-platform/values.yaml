@@ -5,13 +5,15 @@ adminRdsIam:
     key: aws-rds-bundle.crt
     file: files/aws-rds-global-bundle.pem
 
-# Read by dial-install, not by any template: the images of the cluster add-ons that are installed next to the
-# platform. Every value is a full image reference. This is the single place that pins their versions; the chart
-# tag in the Marketplace is the release.
+# Read by dial-install for deployment settings and cluster add-on image pins.
 installer:
+  # Use the Core image to run Flyway before deploying the workloads.
+  coreDatabaseBootstrap: jdbc
   # The registry every image reference in this chart points to by default (what the Marketplace validates).
   # dial-install replaces it with registry.source, or with the customer's own ECR when images are copied.
   registry: 709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam
+  # These build tags are published directly to the installation account before mirroring.
+  preloadedImages: [naya-dial-core, naya-dial-admin-backend, naya-dial-admin-frontend, naya-dial-postgres]
   # Optional value sets. `profiles.rdsIam.values` is merged into the values when dial-install runs with
   # database.auth: iam (DIAL Admin signs in to the database with its IAM role instead of a password).
   profiles:
@@ -94,7 +96,9 @@ dial:
     image:
       registry: "709825985650.dkr.ecr.us-east-1.amazonaws.com"
       repository: naya-technologies-by-epam/naya-dial-core
-      tag: '2026.10.2'
+      tag: 'postgres-licensing-7'
+    updateStrategy:
+      type: Recreate
     serviceAccount:
       create: true
       name: dial-core
@@ -106,6 +110,18 @@ dial:
         key: 'PLACEHOLDER_CORE_ENCRYPTION_KEY'
     env:
       SPEC_STRING: "YjN4T3d6VVFKcFNicFEybzg2OUQ1OHVlT2dKVnpwcHNHWVJvc2h1ejREQT0="
+      aidial.licensing.region: 'PLACEHOLDER_AWS_REGION'
+      aidial.licensing.refreshPeriodMillis: '1800000'
+      aidial.licensing.store: postgres
+      aidial.licensing.postgres.url: 'jdbc:postgresql://PLACEHOLDER_ADMIN_DB_HOST:5432/dialcore'
+      aidial.licensing.postgres.username: dial_core_licensing_iam
+      aidial.licensing.postgres.auth: iam
+      aidial.licensing.postgres.region: 'PLACEHOLDER_AWS_REGION'
+      aidial.licensing.postgres.sslMode: verify-full
+      aidial.licensing.postgres.sslRootCert: /mnt/licensing-rds-ca/aws-rds-bundle.crt
+      # The installer migrates the schema before Helm. The runtime IAM role only needs data access.
+      aidial.licensing.postgres.initializeSchema: 'false'
+      aidial.licensing.postgres.migrationSource: redis
       aidial.applications.includeCustomApps: 'true'
       aidial.applications.controllerTimeout: '600000'
       aidial.applications.controllerEndpoint: 'http://{{ .Release.Name }}-app-controller.{{ .Release.Namespace }}.svc.cluster.local:80'
@@ -211,12 +227,18 @@ dial:
           path: aidial.config.json
     - name: vector-data
       emptyDir: {}
+    - name: licensing-rds-ca
+      configMap:
+        name: dial-admin-rds-ca
     extraVolumeMounts:
     - name: managed-model-chat
       mountPath: /mnt/system-config
       readOnly: true
     - name: config
       mountPath: /mnt/secrets-store
+      readOnly: true
+    - name: licensing-rds-ca
+      mountPath: /mnt/licensing-rds-ca
       readOnly: true
     redis:
       enabled: false
@@ -398,7 +420,7 @@ admin:
     image:
       registry: 709825985650.dkr.ecr.us-east-1.amazonaws.com
       repository: naya-technologies-by-epam/naya-dial-admin-backend
-      tag: '2026.10.1'
+      tag: 'manual-provisional-licensing-2'
     replicaCount: 1
     containerPorts:
       http: 8080
@@ -498,9 +520,10 @@ admin:
     lifecycleHooks: {}
     env:
       # Version of DIAL Core's configuration schema = the server version inside the dial-core image of this chart
-      # (2026.10.2 -> 0.45.7). With an older value DIAL Admin reads Core's state in the old schema and shows every
+      # (postgres-licensing-7 -> 0.45.7). With an older value DIAL Admin reads Core's state in the old schema and shows every
       # model as OUT OF SYNC. Change it together with the dial-core image tag (a test checks the pair).
       CORE_CONFIG_VERSION: "0.45.7"
+      SPRING_APPLICATION_JSON: '{"spring":{"cloud":{"openfeign":{"client":{"config":{"licenseClient":{"connectTimeout":10000,"readTimeout":300000}}}}}}}'
       CORE_CLIENT_URL: "http://{{ .Release.Name }}-core.{{ .Release.Namespace }}.svc.cluster.local"
       PLUGINS_DEPLOYMENT_MANAGER_CLIENT_URL: "http://dial-deployment-manager.{{ .Release.Namespace }}.svc.cluster.local"
       ENABLE_PLUGINS_DEPLOYMENT_MANAGER_ENDPOINT_REFRESH: 'PLACEHOLDER_DEPLOYMENT_MANAGER_ENABLED'
@@ -617,7 +640,7 @@ admin:
     image:
       registry: 709825985650.dkr.ecr.us-east-1.amazonaws.com
       repository: naya-technologies-by-epam/naya-dial-admin-frontend
-      tag: '2026.10.1'
+      tag: 'manual-provisional-licensing-4'
       pullPolicy: Always
     resources:
       requests:
@@ -1382,17 +1405,6 @@ deployment-manager:
         apiGroup: rbac.authorization.k8s.io
         kind: Role
         name: dial-deployment-manager
-
-lic-ins:
-  image:
-    registry: 709825985650.dkr.ecr.us-east-1.amazonaws.com
-    repository: naya-technologies-by-epam/naya-dial-lic-ins
-    tag: '2026.10.2'
-    pullPolicy: IfNotPresent
-  nodeSelector:
-    workload: core
-  env:
-    REDIS_HOST: 'PLACEHOLDER_REDIS_HOSTNAME'
 
 # Grafana (Analytics dashboards) - deployed in the same namespace as DIAL
 grafana:

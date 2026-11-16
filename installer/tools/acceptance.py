@@ -3,7 +3,7 @@
 
 It uses only what a customer would have: the AWS account, the load balancer, a Cognito user. Run it after `apply`:
 
-    python3 tools/acceptance.py -c dial.yaml --profile <aws-profile> [--create-user] [--since 2026-10-19T09:00:00Z]
+    python3 tools/acceptance.py -c dial.yaml --profile <aws-profile> [--create-user]
 
 Without --create-user it expects ADMIN_EMAIL / ADMIN_PASSWORD in the environment (an existing user of the group `admin`).
 `--create-user` creates admin@<base domain> with a random password that it prints (a throw-away test user; never use it in production).
@@ -138,18 +138,11 @@ def exec_in_cluster(env: Env, script: str, *argv: str) -> str:
     return done.stdout.strip() if done.returncode == 0 else f"ERROR {done.stderr.strip()[-200:]}"
 
 
-def cloudtrail_checkouts(env: Env, since: str) -> list[str]:
-    data = env.aws_json("cloudtrail", "lookup-events", "--lookup-attributes", "AttributeKey=EventName,AttributeValue=CheckoutLicense",
-                        "--start-time", since, "--max-items", "200")
-    return sorted(str(e["EventTime"])[:19] for e in (data or {}).get("Events", []))
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("-c", "--config", default="dial.yaml")
     parser.add_argument("--profile", required=True)
     parser.add_argument("--create-user", action="store_true")
-    parser.add_argument("--since", help="UTC time of the installation start, to count license checkouts (default: last 6 hours)")
     args = parser.parse_args()
     env = Env(args)
 
@@ -159,7 +152,7 @@ def main() -> int:
     check(bool(pods) and not unready, "all workloads ready", f"{len(pods)} workloads" + (f", not ready: {unready}" if unready else ""))
     for needed in ("dial-core", "dial-chat", "dial-quickapps", "dial-flows-core", "dial-flows", "dial-admin-backend"):
         check(any(p["metadata"]["name"] == needed for p in pods), f"workload {needed} exists")
-    check(not any(p["metadata"]["name"].endswith("lic-ins") for p in pods), "dial-lic-ins is gone after its first run")
+    check(not any(p["metadata"]["name"].endswith("lic-ins") for p in pods), "legacy license installer workload is absent")
 
     name, ip = load_balancer_ip(env)
     print(f"      load balancer {name} ({ip})")
@@ -177,7 +170,7 @@ def main() -> int:
     check(status == 200 and bool(model), "default.model is registered", f"HTTP {status}")
     check(model.get("features", {}).get("temperature") is False, "default.model does not accept temperature")
     check("hidden" in (model.get("description_keywords") or []), "default.model is hidden")
-    check(http(env, ip, core, "/v1/bucket", headers=auth)[0] == 200, "licensed API call /v1/bucket (200)")
+    check(http(env, ip, core, "/v1/bucket", headers=auth)[0] == 200, "licensed API call /v1/bucket (200). Activate a user tier in License Management before this test")
     check(http(env, ip, core, "/v1/user/info", headers=auth)[0] == 200, "/v1/user/info (200)")
     status, body = http(env, ip, core, "/openai/applications", headers=auth)
     check(status == 200 and "managed-model-chat" in body, "application managed-model-chat is registered")
@@ -215,14 +208,14 @@ def main() -> int:
     check(exec_in_cluster(env, probe, base + "/v1/configuration-support/application-schema", "{}") == "200", "Flow Builder schema endpoint answers inside the cluster")
     check(exec_in_cluster(env, probe, base + "/api/flows?source=published", json.dumps(auth)) == "200", "published-flow catalog answers with a user token")
 
-    # 6. DIAL Admin: sync and adapter name
+    # 6. DIAL Admin: sync, adapter name and license capacity
     key_json = env.aws_json("secretsmanager", "get-secret-value", "--secret-id", env.secret_arn)
     admin_key = json.loads(key_json["SecretString"])["core_admin_api_key"] if key_json else ""
     admin_probe = ("import sys,json,urllib.request as u\nb='http://dial-admin-backend.dial.svc.cluster.local'\nk=sys.argv[1]\n"
                    "def c(p,h=None):\n  r=u.Request(b+p,headers={'Api-Key':k,**(h or {})}); x=u.build_opener().open(r,timeout=30); return x.headers,json.loads(x.read() or 'null')\n"
                    "h,_=c('/api/v1/models/default.model',{'If-None-Match':'0'})\n"
                    "print(json.dumps({'sync':c('/api/v1/models/default.model/sync-state',{'If-Match':h['ETag']})[1].get('status'),"
-                   "'adapters':[a['displayName'] for a in c('/api/v1/adapters')[1]]}))\n")
+                   "'adapters':[a['displayName'] for a in c('/api/v1/adapters')[1]],'maxUsers':c('/api/v1/licenses')[1].get('maxUsers')}))\n")
     out = exec_in_cluster(env, admin_probe, admin_key)
     try:
         info = json.loads(out)
@@ -231,12 +224,8 @@ def main() -> int:
     check(info.get("sync") == "fully_synced", "Admin: default.model is fully_synced", out[:80] if not info else "")
     check("AWS Private Bedrock" in info.get("adapters", []), "Admin: the adapter is named AWS Private Bedrock")
 
-    # 7. license
-    since = args.since or run(["date", "-u", "-d", "6 hours ago", "+%Y-%m-%dT%H:%M:%SZ"]).stdout.strip()
-    checkouts = cloudtrail_checkouts(env, since)
-    print(f"      CheckoutLicense events since {since}: {checkouts}")
-    check(len(checkouts) == 1, "exactly one license unit consumed so far", f"{len(checkouts)} checkout(s) (CloudTrail can lag 5-15 minutes)")
-
+    capacity = info.get("maxUsers")
+    check(isinstance(capacity, int) and (capacity > 0 or capacity == -1), "Admin: user license capacity is active")
     failed = [r for r in RESULTS if not r[0]]
     print(f"\n{len(RESULTS) - len(failed)} passed, {len(failed)} failed")
     return 1 if failed else 0

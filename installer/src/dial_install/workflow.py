@@ -154,7 +154,8 @@ def cmd_mirror(options: Options, runner: Runner, say: Say) -> int:
     if module is None:
         say("registry.provider is `public`: there is nothing to copy.")
         return 0
-    problems = blocking(module.check(ctx))
+    chart_findings = checks.chart_findings(ctx)
+    problems = blocking(chart_findings) or blocking(module.check(ctx))
     if problems:
         for finding in problems:
             say(render(finding))
@@ -193,7 +194,8 @@ def cmd_plan(options: Options, runner: Runner, say: Say) -> int:
         say(f"  {service:<9} https://{host}")
     say("\nAfter `apply` finishes you must:")
     say("  1. Create DNS records for the host names above (apply prints the exact records).")
-    say("  2. Enable access to the Bedrock models you want to use in the AWS console.")
+    say("  2. Activate the tiers you need in DIAL Admin → License Management.")
+    say("  3. Enable access to the Bedrock models you want to use in the AWS console.")
     say("\nNothing has been changed. To proceed: ./dial-install apply")
     return 0
 
@@ -249,9 +251,6 @@ def _before_helm(ctx: Context, say: Say) -> None:
 
 
 def _verify_and_report(ctx: Context, say: Say, *, first_install: bool = False) -> None:
-    # The license is prepared first: DIAL Core does not start without it, so waiting for it earlier only burns time.
-    deploy.finish_license_installer(ctx, say)
-    deploy.ensure_api_key_license(ctx, say)
     pending = deploy.wait_until_ready(ctx, say)
     adapters.name_adapters(ctx, say, deploy.chart_defaults(ctx))
     # The Istio gateway's load balancer is created by the AWS Load Balancer Controller, which is part of the chart.
@@ -265,6 +264,7 @@ def _verify_and_report(ctx: Context, say: Say, *, first_install: bool = False) -
     say("\nDIAL is installed.")
     _print_dns(ctx, say)
     if first_install:
+        say("\nActivate the tiers you need in DIAL Admin → License Management before onboarding users or API keys.")
         _print_first_user(ctx, say)
 
 

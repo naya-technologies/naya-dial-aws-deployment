@@ -11,6 +11,8 @@ from helpers import Base, CHART_VALUES_TEXT, FAKE_OUTPUTS, PLATFORM_CHART, RELEA
 from dial_install import checks, deploy, secrets, tools, workflow
 from dial_install.runner import FakeRunner, Result
 
+CHART_VALUES = yaml.safe_load(CHART_VALUES_TEXT)
+
 CERT_NAMES = ["*.dial.acme.example"]
 INFRA_REVISION = {"value": RELEASE["infra_revision"]}      # what the fake stacks report; tests change it to simulate older stacks
 
@@ -70,6 +72,12 @@ def crane_copy(argv):
 
 
 def registry_fakes():
+    prefix = "123456789012.dkr.ecr.us-east-1.amazonaws.com"
+    for image in (CHART_VALUES["dial"]["core"]["image"], CHART_VALUES["admin"]["backend"]["image"],
+                  CHART_VALUES["admin"]["frontend"]["image"]):
+        MIRRORED.add(f"{prefix}/{image['repository']}:{image['tag']}")
+    pin = RELEASE["addons"]["rds_iam_bootstrap_image"]
+    MIRRORED.add(f"{prefix}/naya-technologies-by-epam/{pin['repository']}:{pin['tag']}")
     return {
         ("helm", "template"): real_helm_template,
         ("/usr/bin/crane", "digest"): crane_digest,
@@ -84,12 +92,11 @@ def cluster_fakes(chart="naya-helm-deployment-2026.10.1"):
         ("kubectl", "--context", "dial-acme", "-n", "istio-system", "get", "svc"): ok_json(
             {"status": {"loadBalancer": {"ingress": [{"hostname": "istio.elb.amazonaws.com"}]}}}),
         ("kubectl", "--context", "dial-acme", "-n", "dial", "get", "deployment", "-o"): ok_json(
-            {"items": [{"metadata": {"name": "dial-core"}}, {"metadata": {"name": "dial-lic-ins"}}]}),
+            {"items": [{"metadata": {"name": "dial-core"}}]}),
         ("kubectl", "--context", "dial-acme", "-n", "dial", "get", "statefulset"): ok_json({"items": []}),
         ("kubectl", "--context", "dial-acme", "-n", "dial", "get", "pods"): ok_json(
-            {"items": [{"metadata": {"name": "dial-lic-ins-7d9f", "creationTimestamp": "2026-01-01T00:00:00Z"}},
-                    {"metadata": {"name": "dial-core-1", "creationTimestamp": "2026-01-02T00:00:00Z"}}]}),
-        ("kubectl", "--context", "dial-acme", "-n", "dial", "logs"): Result(0, "starting\nSetting up...\nOK\n"),
+            {"items": [{"metadata": {"name": "dial-core-1", "creationTimestamp": "2026-01-02T00:00:00Z"}}]}),
+        ("kubectl", "--context", "dial-acme", "-n", "dial", "logs"): Result(0, "Core licensing database and IAM login are ready\n"),
         ("kubectl", "--context", "dial-acme", "-n", "dial", "get", "ingress"): ok_json({"items": [{
             "spec": {"rules": [{"host": "chat.dial.acme.example"}, {"host": "admin.dial.acme.example"}]},
             "status": {"loadBalancer": {"ingress": [{"hostname": "alb-1.elb.amazonaws.com"}]}}}]}),
@@ -261,8 +268,8 @@ class ApplyTests(Base):
         self.assertIn("DIAL is installed.", say.text)
         self.assertIn("chat.dial.acme.example", say.text)
         self.assertIn("alb-1.elb.amazonaws.com", say.text)
-        self.assertTrue(any(argv[:3] == ["kubectl", "--context", "dial-acme"] and "delete" in argv and "dial-lic-ins" in argv
-                            for argv in runner.writes), "license installer must be removed after OK")
+        self.assertFalse(any("lic-ins" in " ".join(argv) or "dial-license-init" in argv for argv in runner.writes))
+        self.assertIn("Activate the tiers you need", say.text)
 
     def test_helm_is_never_run_with_wait_and_always_has_context(self):
         runner = self.full_runner()
@@ -497,33 +504,17 @@ class CallerPrincipalTests(Base):
         self.assertIsNone(self.principal("arn:aws:iam::123456789012:root"))
 
 
-class LicenseStoreTests(Base):
-    """DIAL Core 0.45 needs the `apilicKey` record; the license installer of the same release only writes `licKey`."""
-
-    def run_step(self):
-        from helpers import make_ctx
-        ctx = make_ctx(responses={("helm", "show", "values"): Result(0, CHART_VALUES_TEXT)})
-        ctx.outputs["cache"]["RedisEndpoint"] = "rediss://cache.example.com:6379"
-        deploy.ensure_api_key_license(ctx, lambda _m: None)
-        return ctx.cloud.runner
-
-    def test_record_is_created_without_overwriting(self):
-        runner = self.run_step()
-        call = " ".join(next(w for w in runner.writes if "run" in w and "dial-license-init" in w))
-        self.assertIn("SET 6170696c69634b6579 o1Yr6cVaAt9aJf1QrhV6fg== NX", call)           # apilicKey
-        self.assertIn("SET 61637469766554696572734b6579 o1Yr6cVaAt9aJf1QrhV6fg== NX", call)   # activeTiersKey
-        self.assertIn("-h cache.example.com", call)
-        self.assertNotIn("--rm", call)                                   # never attach to a pod that exits at once
-        self.assertTrue(any("wait" in w and "pod/dial-license-init" in w for w in runner.writes))
-
-    def test_it_runs_before_waiting_for_workloads(self):
-        text = Path(workflow.__file__).read_text(encoding="utf-8")
-        body = text[text.index("def _verify_and_report"):]
-        self.assertLess(body.index("ensure_api_key_license"), body.index("wait_until_ready"))
-
-
 class LocalChartTests(Base):
     """`--chart <dir>` (vendor) installs a chart that is not published yet, so a release is tested before it is published."""
+
+    def test_check_explains_how_to_replace_a_chart_with_the_retired_helper(self):
+        chart = yaml.safe_load(CHART_VALUES_TEXT)
+        chart["lic-ins"] = {"enabled": True}
+        ctx = make_ctx(responses={("helm", "show", "values"): Result(0, yaml.safe_dump(chart))})
+        finding = checks.chart_findings(ctx)[0]
+        self.assertEqual(finding.level, "fail")
+        self.assertIn("retired license installer", finding.message)
+        self.assertIn("--chart ../charts/dial-platform", finding.fix)
 
     def test_helm_gets_the_directory_and_no_version(self):
         from helpers import make_ctx
@@ -573,45 +564,6 @@ class FirstUserMessageTests(Base):
         self.assertIn("first_install=True", install)
 
 
-class LicenseHelperTests(Base):
-    """dial-lic-ins seeds the license records once. An upgrade must not create it again (the Dev post-deploy and the
-    customers' scripts run it once and later upgrades pass lic-ins.enabled=false)."""
-
-    def ctx(self, release_installed, helper_exists):
-        from helpers import make_ctx
-        responses = {("helm", "list"): Result(0, json.dumps([{"chart": "naya-helm-deployment-2026.10.4", "revision": "2",
-                                                              "status": "deployed"}]) if release_installed else "[]")}
-        ctx = make_ctx(responses=responses)
-        ctx.cloud.runner.responses[("kubectl", "--context", ctx.cloud.kube_context, "-n", "dial", "get", "deployment",
-                                    "dial-lic-ins")] = Result(0 if helper_exists else 1, "", "")
-        return ctx
-
-    def built(self, ctx):
-        from dial_install import values
-        return values.build(ctx, deploy.chart_defaults(ctx))
-
-    def test_the_first_installation_runs_the_helper(self):
-        ctx = self.ctx(release_installed=False, helper_exists=False)
-        self.assertTrue(deploy.license_helper_needed(ctx))
-        ctx.cache["license_helper_needed"] = True
-        self.assertNotIn("enabled", self.built(ctx)["lic-ins"])             # the chart default (enabled) applies
-
-    def test_an_upgrade_does_not_create_the_helper_again(self):
-        ctx = self.ctx(release_installed=True, helper_exists=False)
-        self.assertFalse(deploy.license_helper_needed(ctx))
-        ctx.cache["license_helper_needed"] = False
-        self.assertIs(self.built(ctx)["lic-ins"]["enabled"], False)
-
-    def test_an_unfinished_first_installation_keeps_the_helper(self):
-        ctx = self.ctx(release_installed=True, helper_exists=True)
-        self.assertTrue(deploy.license_helper_needed(ctx))
-
-    def test_prepare_decides_before_the_values_are_built(self):
-        text = Path(deploy.__file__).read_text(encoding="utf-8")
-        body = text[text.index("def prepare"):text.index("def chart_defaults")]
-        self.assertIn("license_helper_needed", body)
-
-
 class LicenseReportTests(Base):
     """The installer reports how many license units the account has consumed (read only), so extra consumption is visible."""
 
@@ -641,7 +593,7 @@ class LicenseReportTests(Base):
     def test_check_says_so_when_nothing_is_consumed(self):
         from dial_install import checks
         ctx = self.ctx([])
-        self.assertIn("no license unit consumed", checks.license_findings(ctx)[0].message)
+        self.assertIn("units consumed in this account: none", checks.license_findings(ctx)[0].message)
 
 
 class AdapterNamesTests(Base):

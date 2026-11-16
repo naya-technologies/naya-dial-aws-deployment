@@ -5,13 +5,13 @@ apiVersion: dial-release/v1
 release: 2026.10.4
 
 min_installer_version: 2.0.0     # older installers refuse this release
-infra_revision: 3                # bump when a CloudFormation template changes; upgrade then requires --with-infra
+infra_revision: 4                # bump when a CloudFormation template changes; upgrade then requires --with-infra
 notes: |
   Adds Flow Builder to the platform: the backend (flows-core) and the editor (flows), two new host names, the application type
   "Flow Builder" in DIAL Core, and the "Agent Builder" name for QuickApps. The sign-in callbacks of the Cognito app client change,
   so an upgrade needs --with-infra, and the secret needs the new key flows_session_secret (dial-install init creates it).
   Also: chat works in the UI (managed chat application), the default model is hidden, RAG is not part of the platform.
-  dial-core and dial-lic-ins are 2026.10.2; all other components 2026.10.1.
+  This local chart uses preloaded Core and Admin licensing builds and provisions the Core PostgreSQL database.
 
 chart:
   version: 2026.10.4
@@ -31,6 +31,6 @@ addons:
     version: 1.29.1                         # version of the pre-rendered Istio manifest (assets/istio)
   knative:
     version: knative-v1.21.0                # upstream release the manifests are downloaded from
-  rds_iam_bootstrap_image:                  # only for database.auth: iam; a repository of the product registry
+  rds_iam_bootstrap_image:                  # used for PostgreSQL licensing or Admin IAM login
     repository: naya-dial-postgres
     tag: 15-alpine

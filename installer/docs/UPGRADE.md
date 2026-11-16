@@ -65,10 +65,10 @@ Marketplace with the release id (all image versions, add-ons included, are set i
 optionally add `releases/<id>.yaml` to the installer, bump `infra_revision` if a template changed, `make dist`, and test
 `apply` then `upgrade` on a throw-away installation.
 
-## The license helper runs once
+## Licensing
 
-`dial-lic-ins` is a one-time helper: it seeds the license records into Redis, reports `OK`, and the installer then deletes its
-Deployment. The chart still contains it, so a plain `helm upgrade` would create it again and run it again. `./dial-install apply`
-and `upgrade` therefore enable it only for the first installation (or while its Deployment still exists because that installation
-did not finish) and pass `lic-ins.enabled=false` otherwise. You do not need to do anything.
-
+The platform uses PostgreSQL for licensing state. The installer runs the Core
+database bootstrap before Helm. Existing licensing state is migrated from Redis
+on the first Core startup and PostgreSQL is used on subsequent restarts. Fresh
+installations start with zero capacity. Activate tiers in DIAL Admin under
+**License Management** before onboarding users or API keys.
