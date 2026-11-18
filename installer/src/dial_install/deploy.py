@@ -27,7 +27,10 @@ _SENSITIVE = re.compile(r"(secret|password|token|api_?key|signing|salt|database_
 
 # ---- inputs ---------------------------------------------------------------
 def prepare(ctx: Context) -> None:
-    """Resolve runtime Cognito client secrets."""
+    """Resolve the values that only exist at runtime (Cognito client secrets) and whether the license helper runs."""
+    ctx.cache["license_helper_needed"] = license_helper_needed(ctx)
+    from . import addons                      # imported late: addons uses this module
+    addons.remember_registrations(ctx)
     identity = ctx.outputs["identity"]
     pool = identity["UserPoolId"]
 

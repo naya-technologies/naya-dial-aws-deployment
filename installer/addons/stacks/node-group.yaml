@@ -1,0 +1,57 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Dedicated node group of one DIAL add-on (dial-install add-ons). Only that add-on runs on it.'
+
+Parameters:
+  ClusterName:
+    Type: String
+  NodeRoleArn:
+    Type: String
+  PrivateSubnet1Id:
+    Type: String
+  PrivateSubnet2Id:
+    Type: String
+  InstanceType:
+    Type: String
+    Default: 'c6i.xlarge'
+  Nodes:
+    Type: Number
+    Default: 1
+    MinValue: 1
+    MaxValue: 10
+    Description: 'Number of nodes (minimum = maximum = desired; the add-on is not autoscaled)'
+  DiskSize:
+    Type: Number
+    Default: 50
+    Description: 'Root EBS volume size in GiB'
+  WorkloadLabel:
+    Type: String
+    Description: 'Value of the node label `workload` and of the taint `dedicated`; only pods that ask for it are scheduled here'
+
+Resources:
+  NodeGroup:
+    Type: AWS::EKS::Nodegroup
+    Properties:
+      ClusterName: !Ref ClusterName
+      NodeRole: !Ref NodeRoleArn
+      Subnets:
+        - !Ref PrivateSubnet1Id
+        - !Ref PrivateSubnet2Id
+      CapacityType: ON_DEMAND
+      InstanceTypes:
+        - !Ref InstanceType
+      DiskSize: !Ref DiskSize
+      ScalingConfig:
+        MinSize: !Ref Nodes
+        MaxSize: !Ref Nodes
+        DesiredSize: !Ref Nodes
+      Labels:
+        workload: !Ref WorkloadLabel
+      Taints:
+        - Key: dedicated
+          Value: !Ref WorkloadLabel
+          Effect: NO_SCHEDULE
+
+Outputs:
+  NodeGroupName:
+    Description: 'Name of the node group'
+    Value: !Ref NodeGroup

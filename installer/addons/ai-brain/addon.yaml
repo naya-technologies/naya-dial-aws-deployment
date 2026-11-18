@@ -1,0 +1,25 @@
+# Catalog entry of one add-on (format dial-addon/v1). See docs/ADDONS.md.
+apiVersion: dial-addon/v1
+id: ai-brain
+display_name: AI Brain
+description: Routes a question to the right domain and agent of a tree you define, and answers from their results.
+version: latest                 # `latest`: the highest YYYY.M.N tag in the registry at the moment you run the command; or pin a tag
+
+source:
+  registry: 458490025663.dkr.ecr.us-east-1.amazonaws.com     # Naya's artifact registry (not the AWS Marketplace one)
+
+images:                         # copied into your private ECR with the same repository name; tag = version unless `tag:` is set
+  - repository: naya-dial-ai-brain
+
+chart: charts/dial-extension-2.1.0.tgz     # the generic DIAL extension chart, shipped in this package (relative to addons/)
+values: values.yaml                        # PLACEHOLDER_<NAME> tokens, filled by dial-install (see docs/ADDONS.md)
+
+# Application types this add-on registers in DIAL Core. `component` is the service (<release>-<component>) that runs them.
+application_types:
+  - id: https://DialAIBrain
+    display_name: AI Brain
+    component: brain
+    deployment: brain
+    configuration_endpoint: false
+    append_properties_header: false
+    assistant_attachments: false

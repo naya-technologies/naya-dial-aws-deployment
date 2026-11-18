@@ -1,5 +1,11 @@
 # Changelog - naya-helm-deployment (dial-platform)
 
+## Unreleased
+
+- **DIAL Desktop support (optional, `features.desktop_app`).** The chat gets `APP_COGNITO_DESKTOP_CLIENT_ID` (empty unless the flag is on), the id of the
+  new Cognito app client `dial-x-desktop`. Needs the chat image built from `feature/desktop-support`. Infrastructure change: the Cognito stack
+  gets one more client, only when the flag is on.
+
 ## 2026.10.4
 
 - **Fixes "Chat is unavailable. Please contact your administrator."** The chat UI runs every conversation with a model through the

@@ -26,6 +26,10 @@ Always start with `./dial-install check`. It reports most problems in plain lang
 | `License check failed` | Confirm the Marketplace subscription is active for this account, then run `upgrade` again. |
 | `kubectl: You must be logged in to the server` | You are not the cluster creator. Ask an administrator to run `./dial-install grant-access <your arn>` (see [UPGRADE.md](UPGRADE.md)). |
 | `kubectl` times out | The cluster API is private (`kubernetes.public_endpoint: false`). Run from inside the VPC or a connected network. |
+| `Could not find the latest version of <add-on>` / `Could not copy ... naya-dial-ai-...` | Your AWS account cannot read Naya's registry, or the version does not exist. Ask Naya to allow your account, or name an existing version with `--version <tag>`. See [ADDONS.md](ADDONS.md). |
+| `<add-on> did not become ready` | `kubectl --context dial-<name> -n dial describe pod -l app.kubernetes.io/instance=dial-addon-<id>`. `ImagePullBackOff`: the image is not in your ECR; run the command again. A pod that stays `Pending` for an add-on with its own node group: the node group is not ready or your account has no EC2 quota for the instance type (`--instance-type`). |
+| `CloudFormation stack <name>-addon-<id> failed` | The node group could not be created (quota, instance type). Read the failed events with the command in the message; if the stack is `ROLLBACK_COMPLETE`, delete it, then run the command again. |
+| `DIAL Core did not become ready after its configuration changed` | An add-on's registration made Core refuse its configuration. The message prints the exact `helm rollback` command that restores the previous one; then `add-ons remove <id>` and report it. |
 | Browser shows a certificate or DNS error | The DNS records from `status` are missing or have not propagated yet (can take 30 minutes). |
 
 Useful commands:
@@ -36,5 +40,5 @@ kubectl --context dial-<name> -n dial get pods
 aws cloudformation describe-stacks --stack-name <name>-network --region <region> --query 'Stacks[0].StackStatus'
 ```
 
-`apply` and `upgrade` are safe to repeat. Nothing is ever deleted by the installer; to remove an installation follow
+`apply` and `upgrade` are safe to repeat. `apply` and `upgrade` never delete anything; to remove an installation follow
 [UNINSTALL.md](UNINSTALL.md).

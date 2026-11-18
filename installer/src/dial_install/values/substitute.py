@@ -94,3 +94,11 @@ def overrides(defaults: dict, mapping: dict[str, str]) -> dict:
         raise UnresolvedPlaceholders(sorted(missing))
     result, _ = _walk(defaults, mapping)
     return result
+
+
+def fill(node: Any, mapping: dict[str, str]) -> Any:
+    """`node` with every token replaced (the whole tree, unlike `overrides`, which keeps only what changed)."""
+    missing = find(node) - set(mapping)
+    if missing:
+        raise UnresolvedPlaceholders(sorted(missing))
+    return _full(node, mapping)

@@ -15,6 +15,7 @@ Audience: the people who maintain this package. Customers do not need this file.
 ```
 dial-install            launcher (bash -> python3 -m dial_install)
 installer.yaml          static defaults: chart repository, node groups, models, tools
+addons/                 catalog of optional add-ons (addon.yaml + values.yaml each), see docs/ADDONS.md
 releases/               one manifest per DIAL release (all component versions) + index.yaml
 schema/dial.schema.json the config contract (validated by src/dial_install/schema.py, stdlib only)
 src/dial_install/
@@ -23,6 +24,7 @@ src/dial_install/
   modules.py            discover + select + order modules
   infra.py              one CloudFormation stack per module, outputs
   bootstrap.py          cluster add-ons (autoscaler, storage class, CRDs, Knative, Istio, private DNS)
+  addons.py             add-ons: catalog, install / upgrade / remove, registration in Core
   deploy.py             Helm install/upgrade, diff, readiness, license, DNS records
   values/               placeholder substitution: chart defaults + PLACEHOLDER_* -> values file
   charts.py             locate the packaged cluster-base chart

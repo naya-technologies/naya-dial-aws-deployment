@@ -15,6 +15,7 @@ What it does, in this order:
 1. Reports the AWS Marketplace license usage (see "License" below).
 2. Removes the ingresses and the Istio gateway while the load balancer controller still runs, waits until the
    load balancers are gone, then uninstalls the Helm releases and deletes the volumes and namespaces.
+   Installed add-ons are uninstalled first, and the node groups of add-ons that have one (CloudFormation stacks `<name>-addon-<id>`) are deleted right after the workloads.
 3. Removes the private DNS zone `<namespace>.knative.<name>.internal`.
 4. Turns off the database deletion protection.
 5. Deletes the independent stacks together, then removes load balancers, target groups and security groups left
@@ -31,9 +32,13 @@ Return this environment's provisional tiers in DIAL Admin under **License
 Management** before uninstalling. The installer reports account-wide usage.
 Historical perpetual checkouts cannot be returned through the API.
 
+## Removing just one add-on
+
+`./dial-install add-ons remove <id>` removes an add-on and everything it created (registration in DIAL Core, Helm release, node group, image repositories), and leaves the rest running. See [ADDONS.md](ADDONS.md).
+
 ## Doing it by hand
 
-The same procedure, if you cannot run the command. Replace `<name>` with the `name:` from `dial.yaml`.
+The same procedure, if you cannot run the command. Replace `<name>` with the `name:` from `dial.yaml`. If you installed add-ons, first run `helm uninstall dial-addon-<id> -n dial` for each, and delete the CloudFormation stacks `<name>-addon-<id>` (node groups) before any other stack.
 
 ### 1. Remove the load balancers and the application
 

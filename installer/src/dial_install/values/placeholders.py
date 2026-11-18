@@ -12,6 +12,7 @@ from typing import Callable
 from urllib.parse import quote, urlencode
 
 from ..context import Context
+from ..errors import InstallerError
 
 # Secrets whose placeholder name is not simply the upper-cased secret key.
 _SECRET_ALIASES = {"ADMIN_DB_PASSWORD": "db_master_password"}
@@ -44,25 +45,29 @@ def _bedrock_deployment(model: dict, region: str) -> str:
     return model["bedrock_model_id"] if profile == "none" else f"{profile}.{model['bedrock_model_id']}"
 
 
+def application_type_schema(ctx: Context, kind: dict) -> dict:
+    """The JSON schema DIAL Core needs for one application type, pointing at the service that runs it."""
+    base = _service_url(ctx, kind["component"])
+    deployment = f"{base}/openai/deployments/{kind['deployment']}"
+    return {
+        "$schema": "https://dial.epam.com/application_type_schemas/schema#",
+        "$id": kind["id"],
+        "dial:applicationTypeDisplayName": kind["display_name"],
+        "dial:applicationTypeCompletionEndpoint": f"{deployment}/chat/completions",
+        **({"dial:applicationTypeConfigurationEndpoint": f"{deployment}/configuration"} if kind.get("configuration_endpoint") else {}),
+        "dial:applicationTypeSchemaEndpoint": f"{base}/v1/configuration-support/application-schema",
+        "dial:appendApplicationPropertiesHeader": kind.get("append_properties_header", False),
+        "dial:applicationTypeInterceptors": [],
+        "dial:applicationTypeAssistantAttachmentsInRequestSupported": kind.get("assistant_attachments", False),
+    }
+
+
 def _application_type_schemas(ctx: Context) -> list[dict]:
-    """The application types Core offers (Agent Builder ...): one JSON schema each, pointing at the service that runs them."""
-    schemas = []
-    for kind in ctx.release.get("application_types", []):
-        base = _service_url(ctx, kind["component"])
-        deployment = f"{base}/openai/deployments/{kind['deployment']}"
-        schema = {
-            "$schema": "https://dial.epam.com/application_type_schemas/schema#",
-            "$id": kind["id"],
-            "dial:applicationTypeDisplayName": kind["display_name"],
-            "dial:applicationTypeCompletionEndpoint": f"{deployment}/chat/completions",
-            **({"dial:applicationTypeConfigurationEndpoint": f"{deployment}/configuration"} if kind.get("configuration_endpoint") else {}),
-            "dial:applicationTypeSchemaEndpoint": f"{base}/v1/configuration-support/application-schema",
-            "dial:appendApplicationPropertiesHeader": kind.get("append_properties_header", False),
-            "dial:applicationTypeInterceptors": [],
-            "dial:applicationTypeAssistantAttachmentsInRequestSupported": kind.get("assistant_attachments", False),
-        }
-        schemas.append(schema)
-    return schemas
+    """The application types Core offers: the base ones (Agent Builder, Flow Builder) and those of the installed add-ons
+    (`ctx.cache["addon_schemas"]`, read from the add-ons' own Helm releases by deploy.prepare, so a platform upgrade keeps them)."""
+    schemas = [application_type_schema(ctx, kind) for kind in ctx.release.get("application_types", [])]
+    known = {schema["$id"] for schema in schemas}
+    return schemas + [schema for schema in ctx.cache.get("addon_schemas", []) if schema["$id"] not in known]
 
 
 def _core_config(ctx: Context) -> str:
@@ -84,6 +89,8 @@ def _core_config(ctx: Context) -> str:
         "applicationTypeSchemas": _application_type_schemas(ctx),
         "roles": {"admin": {"limits": {}}, "default": {"limits": {}}},
     }
+    if ctx.cache.get("addon_applications"):             # applications of the installed add-ons (deploy.prepare reads them)
+        document["applications"] = dict(ctx.cache["addon_applications"])
     return json.dumps(document, indent=2)
 
 
@@ -112,6 +119,17 @@ def image_registry(ctx: Context) -> str:
     if ctx.cfg["registry"]["provider"] == "ecr-mirror":
         return _account_registry(ctx)
     return source_host(ctx)
+
+
+def _desktop_client_id(ctx: Context) -> str:
+    """Id of the DIAL Desktop app client: empty when the application is not supported (features.desktop_app: false)."""
+    if not ctx.cfg["features"]["desktop_app"]:
+        return ""
+    client = ctx.outputs["identity"].get("DesktopClientId", "")
+    if not client:
+        raise InstallerError("features.desktop_app is on, but the Cognito app client for DIAL Desktop does not exist yet.",
+                             "The infrastructure must be updated first: run `./dial-install apply` (or `upgrade --with-infra`).")
+    return client
 
 
 def _bool(value: bool) -> str:
@@ -164,6 +182,7 @@ def table(ctx: Context) -> dict[str, Callable[[], str]]:
         # identity
         "COGNITO_USER_POOL_ID": lambda: out["identity"]["UserPoolId"],
         "COGNITO_CLIENT_ID": lambda: out["identity"]["ClientId"],
+        "COGNITO_DESKTOP_CLIENT_ID": lambda: _desktop_client_id(ctx),
         "COGNITO_HOSTED_UI_URL": lambda: out["identity"]["CognitoHostedUIUrl"],
         "COGNITO_CLIENT_SECRET": lambda: cognito()["client_secret"],
         "COGNITO_HOST": lambda: cognito()["issuer"],
