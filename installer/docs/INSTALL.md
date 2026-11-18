@@ -142,6 +142,7 @@ The installer ends with the message **"create the first user"** (it does not cre
 
 ## Later
 
+- **Optional add-ons (AI Brain, AI RAG, ...):** [ADDONS.md](ADDONS.md) (`./dial-install add-ons list`, then `install <id>`). Install them after DIAL works and you can sign in.
 - **New DIAL version:** [UPGRADE.md](UPGRADE.md) (`./dial-install upgrade`).
 - **More administrators for the cluster:** `./dial-install grant-access <iam-arn>`.
 - **Remove an installation:** [UNINSTALL.md](UNINSTALL.md) (`./dial-install uninstall`).

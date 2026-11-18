@@ -45,7 +45,7 @@ Every command that reads `dial.yaml` accepts the same options:
 | `releases` | Lists the releases in this package. | No | none |
 | `verify-release` | Vendor: checks that every image of a release exists in the Marketplace registry. | No | common (`--chart <dir>`: check a local chart before publishing) |
 
-Typical order: `init` -> `install-tools` -> `check` -> `plan` -> (`mirror`) -> `apply` -> DNS -> sign in.
+Typical order: `init` -> `install-tools` -> `check` -> `plan` -> (`mirror`) -> `apply` -> DNS -> sign in -> (`add-ons install <id>`).
 To remove an installation use `uninstall`; see [docs/UNINSTALL.md](docs/UNINSTALL.md).
 
 Runs in AWS CloudShell or any Linux/macOS shell with the AWS CLI. Needs only Python 3.9+.
@@ -64,6 +64,7 @@ No `pip install`, no repository clone: unpack the package and run it. The `-offl
 | Fix a problem | [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) |
 | Install an optional add-on | [docs/ADDONS.md](docs/ADDONS.md) |
 | Remove an installation | [docs/UNINSTALL.md](docs/UNINSTALL.md) |
+| Install an optional add-on (AI Brain, AI RAG, ...) | [docs/ADDONS.md](docs/ADDONS.md) |
 | Maintain or extend the installer | [docs/DEVELOPING.md](docs/DEVELOPING.md) |
 
 ## What it builds
@@ -75,6 +76,7 @@ No `pip install`, no repository clone: unpack the package and run it. The `-offl
 | Storage, cache, database | `storage`, `cache`, `database` | S3 + ECR, ElastiCache Serverless, Aurora PostgreSQL Serverless v2 |
 | Cluster | `compute/eks` | EKS, four managed node groups, IAM roles for service accounts |
 | Sign-in | `identity/cognito` | Cognito users, or SAML federated through Cognito |
+| Add-ons (optional) | `./dial-install add-ons`, catalog in [addons/](addons/) | Products from Naya's registry, each its own Helm release; see [docs/ADDONS.md](docs/ADDONS.md) |
 | Cluster prerequisites | Helm chart `dial-cluster-base` (inside this package) | Namespace, storage class, permissions, CRDs |
 | Images | `registry/ecr-mirror` | Copies the product images from the Marketplace registry into your private ECR |
 | Platform | Helm chart `naya-helm-deployment` from the AWS Marketplace registry | The DIAL umbrella chart; sources in [../charts](../charts/README.md) |

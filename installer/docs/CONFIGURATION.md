@@ -46,6 +46,8 @@ working examples are in [examples/](../examples/).
 Edits to this file take effect on the next `apply` (infrastructure) or `upgrade` (platform settings).
 Changing `name`, the VPC or the region of an installed environment is not supported; install a new one.
 
+Optional products are not configured in this file: see [ADDONS.md](ADDONS.md) (`./dial-install add-ons`).
+
 ## Models
 
 DIAL registers one model, with the stable id **`default.model`** and the display name **System Default Model**, served by an adapter that DIAL Admin shows as **AWS Private Bedrock**. Every

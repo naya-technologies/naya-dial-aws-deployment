@@ -37,6 +37,15 @@ About 37 images are copied: the platform workloads, the build tools used by the 
 (Cluster Autoscaler, Istio, Knative), so the cluster needs no access to Docker Hub, Quay, GCR or GHCR for images. Several GB in total. The first copy takes 10-30 minutes; later runs copy only what changed.
 Set `registry.provider: public` to skip the copy and pull straight from the Marketplace registry.
 
+## Add-ons (optional)
+
+Add-ons (`./dial-install add-ons`, see [ADDONS.md](ADDONS.md)) come from Naya's registry, not from the Marketplace. For them:
+
+- your AWS account must be allowed to pull from that registry (`ecr:GetAuthorizationToken` for you; Naya allows your account on its side);
+- the ECR permissions listed above (the images are copied into your registry);
+- an add-on that has its own nodes (AI RAG) creates a CloudFormation stack with a node group: `cloudformation:*` on that stack, `eks:*Nodegroup*`, and EC2 quota
+  for its instance type (for the default, 4 vCPU of On-Demand standard instances).
+
 ## Database sign-in with the IAM role (optional)
 
 With `database.auth: iam` the installer creates the PostgreSQL role for DIAL Admin through a short Job inside the cluster

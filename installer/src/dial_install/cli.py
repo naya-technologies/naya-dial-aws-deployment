@@ -16,7 +16,7 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="dial-install",
         description="Install and upgrade DIAL on AWS from one config file.",
-        epilog="Typical use: init -> check -> plan -> apply.  Later: upgrade.",
+        epilog="Typical use: init -> check -> plan -> apply.  Later: upgrade.  Optional products: add-ons list | install | upgrade | remove.",
     )
     parser.add_argument("--version", action="version", version=f"dial-install {__version__}")
     sub = parser.add_subparsers(dest="command", required=True, metavar="command")

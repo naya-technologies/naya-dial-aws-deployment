@@ -9,6 +9,7 @@ computer.
 - A private EKS cluster, Aurora PostgreSQL database, ElastiCache Redis, Cognito sign-in (or your SAML provider),
   load balancer with your certificate, and the DIAL platform on top.
 - The product images copied into **your own** private ECR registry.
+- Optional **add-ons** (AI Brain, AI RAG, ...) that you install, upgrade and remove one by one with `./dial-install add-ons`.
 - Later upgrades with one command, and a clean removal with one command.
 
 Typical time: 1-2 hours, mostly waiting for AWS.
@@ -30,6 +31,20 @@ tar xzf dial-install-*.tar.gz && cd dial-install-*/
 3. Create the DNS records the installer prints, then open `https://chat.<your domain>`.
 
 Every step in detail: **[installer/docs/INSTALL.md](installer/docs/INSTALL.md)**.
+
+## Optional add-ons
+
+Beyond the base platform there are optional products from Naya's own registry. They are part of the same tool:
+
+```
+./dial-install add-ons list                 # what exists, and what is installed in your environment
+./dial-install add-ons install ai-brain     # copies the images into your ECR, installs, registers in DIAL Core
+./dial-install add-ons upgrade ai-brain     # the newest version
+./dial-install add-ons remove ai-brain      # removes everything the add-on created
+```
+
+Each add-on gets its own Helm release, its own images in your ECR and, where it needs one (AI RAG), its own node group, and never changes the
+platform's version. Details, settings and flags: **[installer/docs/ADDONS.md](installer/docs/ADDONS.md)**.
 
 ## Documentation
 

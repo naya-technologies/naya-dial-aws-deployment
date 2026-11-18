@@ -34,6 +34,12 @@ If the release changed the infrastructure templates, `upgrade` stops and tells y
 
 If nothing differs, it says **Already up to date** and does nothing.
 
+### Add-ons
+
+Add-ons are upgraded on their own, never by `upgrade`: `./dial-install add-ons upgrade <id>` (see [ADDONS.md](ADDONS.md)). Upgrading the platform keeps every
+installed add-on registered in DIAL Core. The add-on commands refuse to run when the installed platform is not the release that `dial.yaml` selects, so
+upgrade the platform first.
+
 ### Switching the database sign-in
 
 `database.auth` can be changed on an installed environment: set it in `dial.yaml` and run `./dial-install upgrade`. Switching to `iam`
