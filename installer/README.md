@@ -13,6 +13,7 @@ Install and upgrade DIAL on AWS from one configuration file.
 ./dial-install upgrade         # move to a newer DIAL release later
 ./dial-install grant-access <iam-arn>   # give another admin access to the cluster
 ./dial-install uninstall       # remove everything this installation created (alias: remove)
+./dial-install add-ons list    # optional add-ons (install | upgrade | remove)
 ./dial-install releases        # list the DIAL releases in this package
 ./dial-install verify-release  # vendor: every image of a release exists in the Marketplace registry
 ```
@@ -36,14 +37,15 @@ Every command that reads `dial.yaml` accepts the same options:
 | `plan` | Lists the stacks and platform changes `apply` will make. | No | common |
 | `mirror` | Copies the product images from the Marketplace registry into your private ECR, several at a time, and nothing else. `apply` does the same step and skips what is already there, so run `mirror` first from a fast place (for example CloudShell) to save time. | ECR only | common, `--allow-missing-images N` continue when up to N images cannot be copied |
 | `apply` | Creates or updates the infrastructure, copies images, installs DIAL. Safe to repeat; it resumes. | Yes | `-y/--yes` skip the question, `--dry-run` print the commands, `--allow-missing-images N` continue when up to N images cannot be copied (those components stay down) |
-| `status` | Shows the stacks, the installed chart version and the DNS records to create. | No | common |
+| `status` | Shows the stacks, the installed chart version and the DNS records to create. With `features.desktop_app` it also checks and recreates the DIAL X Desktop connection file. | No | common |
 | `upgrade` | Moves an installed DIAL to the release in this package. | Yes | `-y/--yes`, `--dry-run`, `--with-infra` also update the CloudFormation stacks |
 | `grant-access <arn>` | Gives an IAM user or role cluster-admin through an EKS access entry. | EKS only | common |
 | `uninstall` (alias `remove`) | Removes everything this installation created, in an order that cannot get stuck, and checks at the end that nothing is left. Asks you to type the installation name. Details: [docs/UNINSTALL.md](docs/UNINSTALL.md). | **Deletes** | `-y/--yes`, `--dry-run`, `--keep-images` keep the mirrored images, `--keep-secret`, `--keep-snapshot` keep the final database snapshot |
+| `add-ons` (alias `addons`) | `list`, `install <id>`, `upgrade <id>`, `remove <id>`: optional products (AI Brain, ...) from Naya's registry, installed next to the platform. Details: [docs/ADDONS.md](docs/ADDONS.md). | `install`, `upgrade`, `remove` change the cluster and your ECR | `-y/--yes`, `--dry-run`; `install`/`upgrade`: `--version <tag>` (default: the newest), `--model <id>`, `--instance-type <type>`, `--nodes <n>`, `--no-dedicated-nodes` (settings of add-ons that have them); `remove`: `--keep-images` |
 | `releases` | Lists the releases in this package. | No | none |
 | `verify-release` | Vendor: checks that every image of a release exists in the Marketplace registry. | No | common (`--chart <dir>`: check a local chart before publishing) |
 
-Typical order: `init` -> `install-tools` -> `check` -> `plan` -> (`mirror`) -> `apply` -> DNS -> sign in.
+Typical order: `init` -> `install-tools` -> `check` -> `plan` -> (`mirror`) -> `apply` -> DNS -> sign in -> (`add-ons install <id>`).
 To remove an installation use `uninstall`; see [docs/UNINSTALL.md](docs/UNINSTALL.md).
 
 Runs in AWS CloudShell or any Linux/macOS shell with the AWS CLI. Needs only Python 3.9+.
@@ -60,7 +62,9 @@ No `pip install`, no repository clone: unpack the package and run it. The `-offl
 | Install a newer DIAL release | [docs/UPGRADE.md](docs/UPGRADE.md) |
 | Understand or publish a release | [releases/README.md](releases/README.md) |
 | Fix a problem | [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) |
+| Install an optional add-on | [docs/ADDONS.md](docs/ADDONS.md) |
 | Remove an installation | [docs/UNINSTALL.md](docs/UNINSTALL.md) |
+| Install an optional add-on (AI Brain, AI RAG, ...) | [docs/ADDONS.md](docs/ADDONS.md) |
 | Maintain or extend the installer | [docs/DEVELOPING.md](docs/DEVELOPING.md) |
 
 ## What it builds
@@ -72,6 +76,7 @@ No `pip install`, no repository clone: unpack the package and run it. The `-offl
 | Storage, cache, database | `storage`, `cache`, `database` | S3 + ECR, ElastiCache Serverless, Aurora PostgreSQL Serverless v2 |
 | Cluster | `compute/eks` | EKS, four managed node groups, IAM roles for service accounts |
 | Sign-in | `identity/cognito` | Cognito users, or SAML federated through Cognito |
+| Add-ons (optional) | `./dial-install add-ons`, catalog in [addons/](addons/) | Products from Naya's registry, each its own Helm release; see [docs/ADDONS.md](docs/ADDONS.md) |
 | Cluster prerequisites | Helm chart `dial-cluster-base` (inside this package) | Namespace, storage class, permissions, CRDs |
 | Images | `registry/ecr-mirror` | Copies the product images from the Marketplace registry into your private ECR |
 | Platform | Helm chart `naya-helm-deployment` from the AWS Marketplace registry | The DIAL umbrella chart; sources in [../charts](../charts/README.md) |

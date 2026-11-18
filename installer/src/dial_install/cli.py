@@ -16,7 +16,7 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="dial-install",
         description="Install and upgrade DIAL on AWS from one config file.",
-        epilog="Typical use: init -> check -> plan -> apply.  Later: upgrade.",
+        epilog="Typical use: init -> check -> plan -> apply.  Later: upgrade.  Optional products: add-ons list | install | upgrade | remove.",
     )
     parser.add_argument("--version", action="version", version=f"dial-install {__version__}")
     sub = parser.add_subparsers(dest="command", required=True, metavar="command")
@@ -58,6 +58,28 @@ def _parser() -> argparse.ArgumentParser:
     remove.add_argument("--keep-secret", action="store_true", help="keep the Secrets Manager secret")
     remove.add_argument("--keep-snapshot", action="store_true", help="keep the final database snapshot")
 
+    addon = sub.add_parser("add-ons", aliases=["addons"], help="list, install, upgrade or remove optional add-ons (AI Brain, ...)")
+    actions = addon.add_subparsers(dest="addon_action", required=True, metavar="action")
+    common(actions.add_parser("list", help="the add-ons in this package and which are installed (changes nothing)"))
+    for action, text in (("install", "copy an add-on's images into your ECR and install it"),
+                         ("upgrade", "move an installed add-on to the version in this package"),
+                         ("remove", "remove an add-on and everything it created")):
+        one = actions.add_parser(action, help=text)
+        common(one)
+        one.add_argument("addon", help="add-on id (see `add-ons list`)")
+        one.add_argument("-y", "--yes", action="store_true", help="do not ask for confirmation")
+        one.add_argument("--dry-run", action="store_true", help="print the commands instead of running them")
+        if action in ("install", "upgrade"):
+            one.add_argument("--version", dest="addon_version", help="a specific version (registry tag) instead of the newest one")
+            one.add_argument("--instance-type", help="add-ons with their own nodes (AI RAG): EC2 instance type of the node group")
+            one.add_argument("--nodes", help="add-ons with their own nodes: number of nodes (1-10)")
+            one.add_argument("--no-dedicated-nodes", action="store_true",
+                             help="add-ons with their own nodes: run on the shared platform nodes instead (not recommended)")
+            one.add_argument("--model", help="add-ons that use a model (AI RAG): the DIAL model (deployment id) to use; "
+                                             "default: the system default model, or the one already installed")
+        if action == "remove":
+            one.add_argument("--keep-images", action="store_true", help="keep the add-on's images in your ECR")
+
     sub.add_parser("releases", help="list the DIAL releases included in this package")
     verify = sub.add_parser("verify-release", help="check that every image of a release exists in the Marketplace registry")
     common(verify)
@@ -73,6 +95,8 @@ def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     if args.command == "remove":                     # alias of uninstall
         args.command = "uninstall"
+    if args.command == "addons":                     # alias of add-ons
+        args.command = "add-ons"
     try:
         return _dispatch(args)
     except InstallerError as error:
@@ -114,6 +138,11 @@ def _dispatch(args: argparse.Namespace) -> int:
         keep_secret=getattr(args, "keep_secret", False),
         keep_snapshot=getattr(args, "keep_snapshot", False),
         allow_missing_images=getattr(args, "allow_missing_images", 0),
+        addon=getattr(args, "addon", None),
+        addon_settings={key: value for key, value in (
+            ("model", getattr(args, "model", None)), ("version", getattr(args, "addon_version", None)),
+            ("instance_type", getattr(args, "instance_type", None)), ("nodes", getattr(args, "nodes", None)),
+            ("dedicated_nodes", "false" if getattr(args, "no_dedicated_nodes", False) else None)) if value} or None,
     )
     runner = Runner(dry_run=options.dry_run)
     commands = {
@@ -127,6 +156,10 @@ def _dispatch(args: argparse.Namespace) -> int:
         "verify-release": workflow.cmd_verify_release,
     }
     try:
+        if args.command == "add-ons":
+            action = {"list": workflow.cmd_addons_list, "install": workflow.cmd_addons_install,
+                      "upgrade": workflow.cmd_addons_upgrade, "remove": workflow.cmd_addons_remove}[args.addon_action]
+            return action(options, runner, print)
         if args.command == "grant-access":
             return workflow.cmd_grant_access(options, runner, print, args.principal_arn)
         return commands[args.command](options, runner, print)

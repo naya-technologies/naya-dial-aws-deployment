@@ -91,6 +91,9 @@ placeholders:
   COGNITO_CLIENT_SECRET:
     source: runtime
     description: Read from Cognito at install time (never stored in a stack output).
+  COGNITO_DESKTOP_CLIENT_ID:
+    source: stack-output
+    description: App client of the DIAL Desktop application (features.desktop_app); empty when it is not supported.
   COGNITO_HOST:
     source: derived
     description: Cognito issuer URL.

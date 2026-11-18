@@ -1,0 +1,50 @@
+# Values of the generic `dial-extension` chart for AI Brain. Only PLACEHOLDER_<NAME> tokens are environment specific.
+# The service is reached only by DIAL Core inside the cluster: no ingress, no host name, no sign-in, no secrets.
+fullnameOverride: PLACEHOLDER_DIAL_RELEASE_NAME-brain
+replicaCount: 1
+image:
+  registry: PLACEHOLDER_IMAGE_REGISTRY
+  repository: naya-dial-ai-brain
+  tag: 'PLACEHOLDER_ADDON_VERSION'
+  pullPolicy: IfNotPresent
+containerPorts:
+  http: 5000
+service:
+  type: ClusterIP
+  ports:
+    http: 80
+nodeSelector:
+  workload: core
+serviceAccount:
+  create: true
+  automountServiceAccountToken: false
+automountServiceAccountToken: false
+env:
+  DIAL_CORE_URL: PLACEHOLDER_DIAL_CORE_URL
+  LOG_LEVEL: INFO
+ingress:
+  enabled: false
+livenessProbe:
+  enabled: true
+  httpGet: {path: /health, port: http}
+  initialDelaySeconds: 20
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+readinessProbe:
+  enabled: true
+  httpGet: {path: /health, port: http}
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+startupProbe:
+  enabled: true
+  httpGet: {path: /health, port: http}
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 30
+resources:
+  requests: {cpu: 100m, memory: 256Mi}
+  limits: {memory: 512Mi}

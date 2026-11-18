@@ -50,7 +50,7 @@ already contains them and needs no internet access at all, only access to AWS.
 Answer the questions; press Enter to accept the value in brackets. You will be asked for the region, the domain, the
 host name of every service (chat, admin, core, themes, grafana, superset, flows, flows-core: the proposal is `<service>.<your domain>`, and you can
 choose any other name for each one), the certificate ARN, whether to create a new network or use an existing one, whether the application is internal or public,
-and how users sign in. At the end it writes two files:
+how users sign in, and whether to support the DIAL Desktop application. At the end it writes two files:
 
 - `dial.yaml` - your configuration. Safe to read and edit.
 - `dial-secrets.json` - random passwords and keys DIAL needs.
@@ -133,6 +133,13 @@ The installer ends with the message **"create the first user"** (it does not cre
    administrator, create a group named `admin` and add the user to it.
    With SAML sign-in, users sign in through your identity provider; map its administrator group to `admin`.
 
+## 9. DIAL X Desktop (optional)
+
+If you answered yes to supporting the DIAL Desktop application (`features.desktop_app: true`), the installer also writes `<name>.dialx.json` next to
+`dial.yaml` and prints it. Give that file to your users: in DIAL X Desktop they choose New connection, Import file, pick the file, Save, and click the
+connection to sign in. After you create the DNS records (step 7) run `./dial-install status` once: it checks the file again against your live
+environment. Details: [CONFIGURATION.md](CONFIGURATION.md#dial-desktop-application).
+
 ## If something fails
 
 - Read the message: it says what to fix. Then run the same command again.
@@ -142,6 +149,7 @@ The installer ends with the message **"create the first user"** (it does not cre
 
 ## Later
 
+- **Optional add-ons (AI Brain, AI RAG, ...):** [ADDONS.md](ADDONS.md) (`./dial-install add-ons list`, then `install <id>`). Install them after DIAL works and you can sign in.
 - **New DIAL version:** [UPGRADE.md](UPGRADE.md) (`./dial-install upgrade`).
 - **More administrators for the cluster:** `./dial-install grant-access <iam-arn>`.
 - **Remove an installation:** [UNINSTALL.md](UNINSTALL.md) (`./dial-install uninstall`).

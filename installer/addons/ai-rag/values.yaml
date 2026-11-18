@@ -1,0 +1,42 @@
+# Values of the generic `dial-extension` chart for RAG (the same values it had inside the platform chart before it became an add-on).
+# Reached only by DIAL inside the cluster: no ingress, no host name.
+# Which nodes it runs on (nodeSelector, tolerations) is decided by dial-install from the add-on's node_group.
+fullnameOverride: PLACEHOLDER_DIAL_RELEASE_NAME-rag
+replicaCount: 1
+updateStrategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxSurge: 0              # the pod is large; do not start a second one next to it during an update
+    maxUnavailable: 1
+image:
+  registry: PLACEHOLDER_IMAGE_REGISTRY
+  repository: naya-dial-ai-rag
+  tag: 'PLACEHOLDER_ADDON_VERSION'
+  pullPolicy: IfNotPresent
+containerPorts:
+  http: 5000
+service:
+  type: ClusterIP
+  ports:
+    http: 80
+nodeSelector:               # replaced by the dedicated node group when there is one (the default)
+  workload: core
+serviceAccount:
+  create: true
+env:
+  DIAL_URL: PLACEHOLDER_DIAL_CORE_URL
+  DIAL_API_KEY: PLACEHOLDER_DIAL_API_KEY
+  DIAL_RAG__INDEX_STORAGE__USE_DIAL_FILE_STORAGE: "True"
+  DIAL_RAG__CONFIG_PATH: /config/aws_embedding.yaml
+  CHAT_MODEL: PLACEHOLDER_MODEL
+  DIAL_RAG__REQUEST__QA_CHAIN__QUERY_CHAIN__LLM__DEPLOYMENT_NAME: PLACEHOLDER_MODEL
+  DIAL_RAG__REQUEST__QA_CHAIN__CHAT_CHAIN__LLM__DEPLOYMENT_NAME: PLACEHOLDER_MODEL
+ingress:
+  enabled: false
+resources:
+  requests:
+    cpu: 1000m
+    memory: 4Gi
+  limits:
+    cpu: 2000m
+    memory: 6Gi
