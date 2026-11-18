@@ -643,7 +643,7 @@ admin:
     image:
       registry: 709825985650.dkr.ecr.us-east-1.amazonaws.com
       repository: naya-technologies-by-epam/naya-dial-admin-frontend
-      tag: 'manual-provisional-licensing-6'
+      tag: '2026.10.1'
       pullPolicy: Always
     resources:
       requests:
