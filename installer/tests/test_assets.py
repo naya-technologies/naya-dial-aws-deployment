@@ -114,7 +114,8 @@ class OfflineHygieneTests(Base):
             text = path.read_text()
             if re.search(r"urlopen|download_text|_fetch\(", text):
                 callers.append(path.name)
-        self.assertEqual(sorted(set(callers)), ["bootstrap.py", "tools.py"])
+        # desktop.py only asks the customer's own environment and Cognito (the connection file checks); it downloads nothing.
+        self.assertEqual(sorted(set(callers)), ["bootstrap.py", "desktop.py", "tools.py"])
 
 
 if __name__ == "__main__":

@@ -50,7 +50,7 @@ already contains them and needs no internet access at all, only access to AWS.
 Answer the questions; press Enter to accept the value in brackets. You will be asked for the region, the domain, the
 host name of every service (chat, admin, core, themes, grafana, superset, flows, flows-core: the proposal is `<service>.<your domain>`, and you can
 choose any other name for each one), the certificate ARN, whether to create a new network or use an existing one, whether the application is internal or public,
-and how users sign in. At the end it writes two files:
+how users sign in, and whether to support the DIAL Desktop application. At the end it writes two files:
 
 - `dial.yaml` - your configuration. Safe to read and edit.
 - `dial-secrets.json` - random passwords and keys DIAL needs.
@@ -132,6 +132,13 @@ The installer ends with the message **"create the first user"** (it does not cre
 2. With Cognito sign-in: AWS console -> Amazon Cognito -> your user pool -> create a user. To make that user an
    administrator, create a group named `admin` and add the user to it.
    With SAML sign-in, users sign in through your identity provider; map its administrator group to `admin`.
+
+## 9. DIAL X Desktop (optional)
+
+If you answered yes to supporting the DIAL Desktop application (`features.desktop_app: true`), the installer also writes `<name>.dialx.json` next to
+`dial.yaml` and prints it. Give that file to your users: in DIAL X Desktop they choose New connection, Import file, pick the file, Save, and click the
+connection to sign in. After you create the DNS records (step 7) run `./dial-install status` once: it checks the file again against your live
+environment. Details: [CONFIGURATION.md](CONFIGURATION.md#dial-desktop-application).
 
 ## If something fails
 

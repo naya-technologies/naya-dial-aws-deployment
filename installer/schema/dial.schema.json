@@ -433,6 +433,11 @@
           "type": "boolean",
           "default": true
         },
+        "desktop_app": {
+          "type": "boolean",
+          "default": false,
+          "description": "Support the DIAL Desktop application: creates its Cognito app client and tells the chat about it."
+        },
         "container_logs": {
           "type": "boolean",
           "default": true,

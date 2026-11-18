@@ -101,8 +101,13 @@ class Wizard:
         if self.choice("How does DIAL Admin sign in to the database?",
                        ["Password (simple)", "Its IAM role (no password, short-lived tokens)"]) == 2:
             answers["database"] = {"auth": "iam"}
+        features: dict = {}
         if not self.yes_no("Install analytics (Superset, Grafana)?", True):
-            answers["features"] = {"analytics": False}
+            features["analytics"] = False
+        if self.yes_no("Support the DIAL Desktop application (adds a sign-in client for it)?", False):
+            features["desktop_app"] = True
+        if features:
+            answers["features"] = features
         if not self.yes_no("Copy the product images into your own private ECR (recommended)?", True):
             answers["registry"] = {"provider": "public"}
 
@@ -228,7 +233,12 @@ def render_config(answers: dict) -> str:
     if answers.get("database"):
         lines += ["", "database:", f"  auth: {answers['database']['auth']}              # password | iam"]
     if answers.get("features"):
-        lines += ["", "features:", "  analytics: false"]
+        features = answers["features"]
+        lines += ["", "features:"]
+        if "analytics" in features:
+            lines.append("  analytics: false")
+        if features.get("desktop_app"):
+            lines.append("  desktop_app: true               # the DIAL Desktop application can sign in (Cognito app client nayadial://)")
     if answers.get("registry"):
         lines += ["", "registry:", "  provider: public                # pull images directly from the AWS Marketplace registry"]
     lines += [

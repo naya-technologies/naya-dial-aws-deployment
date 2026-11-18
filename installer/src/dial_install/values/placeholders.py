@@ -12,6 +12,7 @@ from typing import Callable
 from urllib.parse import quote, urlencode
 
 from ..context import Context
+from ..errors import InstallerError
 
 # Secrets whose placeholder name is not simply the upper-cased secret key.
 _SECRET_ALIASES = {"ADMIN_DB_PASSWORD": "db_master_password"}
@@ -120,6 +121,17 @@ def image_registry(ctx: Context) -> str:
     return source_host(ctx)
 
 
+def _desktop_client_id(ctx: Context) -> str:
+    """Id of the DIAL Desktop app client: empty when the application is not supported (features.desktop_app: false)."""
+    if not ctx.cfg["features"]["desktop_app"]:
+        return ""
+    client = ctx.outputs["identity"].get("DesktopClientId", "")
+    if not client:
+        raise InstallerError("features.desktop_app is on, but the Cognito app client for DIAL Desktop does not exist yet.",
+                             "The infrastructure must be updated first: run `./dial-install apply` (or `upgrade --with-infra`).")
+    return client
+
+
 def _bool(value: bool) -> str:
     return str(bool(value)).lower()
 
@@ -171,6 +183,7 @@ def table(ctx: Context) -> dict[str, Callable[[], str]]:
         # identity
         "COGNITO_USER_POOL_ID": lambda: out["identity"]["UserPoolId"],
         "COGNITO_CLIENT_ID": lambda: out["identity"]["ClientId"],
+        "COGNITO_DESKTOP_CLIENT_ID": lambda: _desktop_client_id(ctx),
         "COGNITO_HOSTED_UI_URL": lambda: out["identity"]["CognitoHostedUIUrl"],
         "COGNITO_CLIENT_SECRET": lambda: cognito()["client_secret"],
         "COGNITO_HOST": lambda: cognito()["issuer"],

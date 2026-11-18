@@ -35,6 +35,7 @@ def parameters(ctx):
         "FlowsCoreHost": hosts["flows-core"],
         "DisableSelfRegistration": str(not identity["self_registration"]).lower(),
         "HostedUIDomainPrefix": identity.get("hosted_ui_domain_prefix", ""),
+        "EnableDesktopApp": str(ctx.cfg["features"]["desktop_app"]).lower(),
     }
     if identity["provider"] == "cognito-saml":
         saml = identity["saml"]
@@ -44,3 +45,8 @@ def parameters(ctx):
             "SAMLIdpSignout": str(saml["idp_signout"]).lower(),
         })
     return params
+
+
+def finalize_outputs(ctx, raw):
+    """The Desktop client exists only when features.desktop_app is on; its id is empty otherwise."""
+    return {**raw, "DesktopClientId": raw.get("DesktopClientId", "")}
