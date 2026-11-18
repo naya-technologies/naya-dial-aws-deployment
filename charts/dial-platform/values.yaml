@@ -96,9 +96,7 @@ dial:
     image:
       registry: "709825985650.dkr.ecr.us-east-1.amazonaws.com"
       repository: naya-technologies-by-epam/naya-dial-core
-      tag: 'postgres-licensing-7'
-    updateStrategy:
-      type: Recreate
+      tag: '2026.10.2'
     serviceAccount:
       create: true
       name: dial-core
@@ -121,7 +119,8 @@ dial:
       aidial.licensing.postgres.sslRootCert: /mnt/licensing-rds-ca/aws-rds-bundle.crt
       # The installer migrates the schema before Helm. The runtime IAM role only needs data access.
       aidial.licensing.postgres.initializeSchema: 'false'
-      aidial.licensing.postgres.migrationSource: redis
+      # Set to redis during a deliberate cutover from a populated Redis licensing store.
+      aidial.licensing.postgres.migrationSource: none
       aidial.applications.includeCustomApps: 'true'
       aidial.applications.controllerTimeout: '600000'
       aidial.applications.controllerEndpoint: 'http://{{ .Release.Name }}-app-controller.{{ .Release.Namespace }}.svc.cluster.local:80'
@@ -420,7 +419,7 @@ admin:
     image:
       registry: 709825985650.dkr.ecr.us-east-1.amazonaws.com
       repository: naya-technologies-by-epam/naya-dial-admin-backend
-      tag: 'manual-provisional-licensing-2'
+      tag: '2026.10.1'
     replicaCount: 1
     containerPorts:
       http: 8080
@@ -523,7 +522,11 @@ admin:
       # (postgres-licensing-7 -> 0.45.7). With an older value DIAL Admin reads Core's state in the old schema and shows every
       # model as OUT OF SYNC. Change it together with the dial-core image tag (a test checks the pair).
       CORE_CONFIG_VERSION: "0.45.7"
-      SPRING_APPLICATION_JSON: '{"spring":{"cloud":{"openfeign":{"client":{"config":{"licenseClient":{"connectTimeout":10000,"readTimeout":300000}}}}}}}'
+      CONFIG_REST_SECURITY_MODE: oidc
+      SECURITY_REQUIRE_EMAIL: 'true'
+      SPRING_APPLICATION_JSON: >-
+        {"providers":{"cognito":{"issuer":"PLACEHOLDER_COGNITO_HOST","jwkSetUri":"PLACEHOLDER_COGNITO_JWKS_URL","principalClaim":"sub","audiences":["PLACEHOLDER_COGNITO_CLIENT_ID"],"roleClaims":["cognito:groups"],"emailClaims":["email"]}},
+        "spring":{"cloud":{"openfeign":{"client":{"config":{"licenseClient":{"connectTimeout":10000,"readTimeout":300000}}}}}}}
       CORE_CLIENT_URL: "http://{{ .Release.Name }}-core.{{ .Release.Namespace }}.svc.cluster.local"
       PLUGINS_DEPLOYMENT_MANAGER_CLIENT_URL: "http://dial-deployment-manager.{{ .Release.Namespace }}.svc.cluster.local"
       ENABLE_PLUGINS_DEPLOYMENT_MANAGER_ENDPOINT_REFRESH: 'PLACEHOLDER_DEPLOYMENT_MANAGER_ENABLED'
@@ -640,7 +643,7 @@ admin:
     image:
       registry: 709825985650.dkr.ecr.us-east-1.amazonaws.com
       repository: naya-technologies-by-epam/naya-dial-admin-frontend
-      tag: 'manual-provisional-licensing-4'
+      tag: 'manual-provisional-licensing-6'
       pullPolicy: Always
     resources:
       requests:
@@ -663,6 +666,7 @@ admin:
       AUTH_COGNITO_SECRET: 'PLACEHOLDER_COGNITO_CLIENT_SECRET'
       AUTH_COGNITO_DIAL_ROLES_FIELD: cognito:groups
       AUTH_COGNITO_ADMIN_ROLE_NAMES: admin
+      AUTH_IDTOKEN_PROVIDERS: cognito
       DEPLOYMENTS_ENABLED: 'PLACEHOLDER_DEPLOYMENT_MANAGER_ENABLED'
       MCP_REGISTRY_ENABLED: 'PLACEHOLDER_DEPLOYMENT_MANAGER_ENABLED'
       DIAL_DEPLOYMENTS_API_URL: "http://dial-deployment-manager.{{ .Release.Namespace }}.svc.cluster.local"

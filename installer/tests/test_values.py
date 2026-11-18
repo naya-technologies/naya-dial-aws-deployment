@@ -93,6 +93,8 @@ class ContractTests(Base):
         sensitive = re.compile(r"(password|secret|token|api_?key|salt|signing)", re.I)
         for path, value in flatten(CHART_VALUES):
             leaf = re.split(r"[.\[]", path)[-1]
+            if leaf == "AUTH_IDTOKEN_PROVIDERS":
+                continue  # This is a list of provider names.
             if sensitive.search(leaf) and not leaf.lower().endswith(("secretname", "existingsecret")) and isinstance(value, str) and value:
                 self.assertTrue("PLACEHOLDER" in value or "{{" in value or value.lower() in ("true", "false"),
                                 f"{path} holds a concrete value in the chart; use a placeholder")
@@ -407,6 +409,23 @@ class RealHelmTests(Base):
         text, _ = self.render_platform()
         left = sorted(set(re.findall(r"PLACEHOLDER_[A-Z0-9_]+", text)))
         self.assertEqual(left, [])
+
+    def test_admin_authenticates_license_requests_with_cognito(self):
+        _, docs = self.render_platform()
+        deployments = {d["metadata"]["name"]: d for d in docs if d["kind"] == "Deployment"}
+
+        def env(name):
+            container = deployments[name]["spec"]["template"]["spec"]["containers"][0]
+            return {entry["name"]: entry.get("value") for entry in container["env"]}
+
+        frontend = env("dial-frontend")
+        backend = env("dial-admin-backend")
+        self.assertEqual(frontend["AUTH_IDTOKEN_PROVIDERS"], "cognito")
+        self.assertEqual(backend["CONFIG_REST_SECURITY_MODE"], "oidc")
+        cognito = json.loads(backend["SPRING_APPLICATION_JSON"])["providers"]["cognito"]
+        self.assertEqual(cognito["issuer"], frontend["AUTH_COGNITO_HOST"])
+        self.assertEqual(cognito["audiences"], [frontend["AUTH_COGNITO_CLIENT_ID"]])
+        self.assertEqual(cognito["roleClaims"], ["cognito:groups"])
 
     def test_core_licensing_uses_private_postgres_and_admin_uses_the_core_service(self):
         _, docs = self.render_platform()

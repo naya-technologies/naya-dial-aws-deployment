@@ -68,7 +68,12 @@ optionally add `releases/<id>.yaml` to the installer, bump `infra_revision` if a
 ## Licensing
 
 The platform uses PostgreSQL for licensing state. The installer runs the Core
-database bootstrap before Helm. Existing licensing state is migrated from Redis
-on the first Core startup and PostgreSQL is used on subsequent restarts. Fresh
-installations start with zero capacity. Activate tiers in DIAL Admin under
+database bootstrap before Helm. The chart defaults to an empty licensing store for
+fresh installations. For a deliberate cutover from a populated Redis licensing
+store, set `dial.core.env["aidial.licensing.postgres.migrationSource"]` to `redis`
+in the desired chart values before the first PostgreSQL-backed Core startup.
+Confirm that the Redis endpoint and product match the old deployment. An empty
+source fails without recording a completed migration. Existing Core databases
+written by the format-3 image require checkout reconciliation and a fresh
+licensing store before rollout. Fresh installations start with zero capacity. Activate tiers in DIAL Admin under
 **License Management** before onboarding users or API keys.
