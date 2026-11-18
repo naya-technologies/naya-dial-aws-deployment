@@ -48,12 +48,14 @@ Add-ons (`./dial-install add-ons`, see [ADDONS.md](ADDONS.md)) come from Naya's 
 
 ## Database sign-in with the IAM role (optional)
 
-With `database.auth: iam` the installer creates the PostgreSQL role for DIAL Admin through a short Job inside the cluster
-(the database is private), then installs DIAL so that Admin signs in with its IAM role. Nothing to prepare except:
+With `database.auth: iam`, the installer creates the PostgreSQL role for DIAL
+Admin in a short Job inside the cluster. The Job uses the master password from
+your secret. DIAL Admin then signs in with IAM.
 
-- the image `naya-dial-postgres:15-alpine` (pinned in the release manifest) must exist in the product registry; it is copied to your ECR like the others. Or set
-  `database.bootstrap_image` to any image that contains `psql` and can be pulled by the cluster;
-- the role is created with the master password from your secret; afterwards Admin itself uses no password.
+With JDBC bootstrap, publish the Flyway-enabled Core image selected by the chart.
+Older releases and explicit legacy mode use the PostgreSQL client image pinned
+in the release manifest. Set `database.bootstrap_image` to override that legacy
+image if needed.
 
 ## Domain and certificate
 

@@ -137,19 +137,29 @@ def discover(ctx: Context, chart_values: dict) -> list[str]:
     named = re.findall(re.escape(host) + r"/[A-Za-z0-9._/-]+:[A-Za-z0-9._-]+", json.dumps(effective))
     extra = set()
     database = ctx.cfg["database"]
-    if database["auth"] == "iam" and not database.get("bootstrap_image"):         # only the IAM login needs this image
-        from . import db_bootstrap
+    from . import db_bootstrap
+    if db_bootstrap.requires_psql(ctx, effective) and not database.get("bootstrap_image"):
         extra.add(db_bootstrap.pinned_image(ctx, host))
     return sorted(found | set(named) | extra)
 
 
-def missing(ctx: Context, images: list[str]) -> list[str]:
-    """Images that do not exist in the Marketplace registry (or cannot be read with these credentials)."""
-    config_dir = _docker_config(ctx, [source_host(ctx)])
+def _preloaded(image: str, names: tuple[str, ...]) -> bool:
+    return split_ref(image)[1].rsplit("/", 1)[-1] in names
+
+
+def missing(ctx: Context, images: list[str], preloaded: tuple[str, ...] = ()) -> list[str]:
+    """Images missing from their source, or from the destination for declared local builds."""
+    source = source_host(ctx)
+    target = target_host(ctx) if preloaded else source
+    config_dir = _docker_config(ctx, sorted({source, target}))
+
     try:
         crane = crane_path(ctx)
-        return [image for image in images
-                if ctx.cloud.runner.run([crane, "digest", image], check=False, env={"DOCKER_CONFIG": str(config_dir)}).returncode != 0]
+        locations = (f"{target}/{image.removeprefix(source + '/')}" if _preloaded(image, preloaded) else image
+                     for image in images)
+        return [location for location in locations
+                if ctx.cloud.runner.run([crane, "digest", location], check=False,
+                                        env={"DOCKER_CONFIG": str(config_dir)}).returncode != 0]
     finally:
         shutil.rmtree(config_dir, ignore_errors=True)
 
@@ -233,7 +243,8 @@ def crane_path(ctx: Context) -> str:
 COPY_WORKERS = 6        # images copied at the same time; the network, not the CPU, is the limit
 
 
-def copy_images(ctx: Context, images: list[str], say: Callable[[str], None]) -> tuple[int, int]:
+def copy_images(ctx: Context, images: list[str], say: Callable[[str], None],
+                preloaded: tuple[str, ...] = ()) -> tuple[int, int]:
     """Copy `images` to the customer's ECR, several at a time. Returns (copied, skipped)."""
     source, target = source_host(ctx), target_host(ctx)
     crane = crane_path(ctx)
@@ -249,6 +260,12 @@ def copy_images(ctx: Context, images: list[str], say: Callable[[str], None]) -> 
         """True when the image was copied, False when it was already there, None when it failed (and may be skipped)."""
         path, tag = _split(image, source)
         destination = f"{target}/{path}:{tag}"
+        if _preloaded(image, preloaded):
+            if runner.dry_run or runner.run([crane, "digest", destination], check=False, env=env).returncode == 0:
+                say(f"  [{index}/{total}] using preloaded image {destination}")
+                return False
+            raise InstallerError(f"Missing preloaded image: {destination}",
+                                 "Publish the local build before running the installer.")
         wanted = runner.run([crane, "digest", image], check=False, env=env).stdout.strip()
         present = runner.run([crane, "digest", destination], check=False, env=env).stdout.strip()
         if wanted and wanted == present:

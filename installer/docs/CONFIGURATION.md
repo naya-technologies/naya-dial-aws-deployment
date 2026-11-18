@@ -26,7 +26,8 @@ working examples are in [examples/](../examples/).
 | `database.min_capacity`, `max_capacity` | `1`, `4` | Aurora Serverless v2 capacity (ACU). The database scales between the two on its own; raise `max_capacity` if it becomes the bottleneck. |
 | `database.auth` | `password` | How DIAL Admin signs in to the database: `password` or `iam` (its IAM role: no password, short-lived tokens). The Deployment Manager and Superset still use the password. |
 | `database.iam_user` | `dial_admin_iam` | PostgreSQL role used with `auth: iam`. |
-| `database.bootstrap_image` | from the chart | Advanced, `auth: iam`: image with `psql` for the one-time role creation. |
+| `database.core_bootstrap` | from the chart | Override the chart bootstrap method. `jdbc` uses a Core image that includes `LicensingDatabaseBootstrap` and runs Flyway before Helm. |
+| `database.bootstrap_image` | from the chart | Image with `psql` when the installer uses the legacy bootstrap. |
 | `database.backup_retention_days` | `7` | Days automated backups are kept (1-35). |
 | `database.deletion_protection` | `true` | The database cannot be deleted while enabled. |
 | `database.engine_version` | from the release | Aurora PostgreSQL version; `check` confirms AWS still offers it. |

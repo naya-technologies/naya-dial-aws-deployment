@@ -359,9 +359,13 @@
           "default": "dial_admin_iam",
           "description": "PostgreSQL role used with auth `iam`."
         },
+        "core_bootstrap": {
+          "enum": ["legacy", "jdbc"],
+          "description": "Override the chart’s Core database bootstrap method. jdbc uses Flyway from a compatible Core image."
+        },
         "bootstrap_image": {
           "type": "string",
-          "description": "Advanced, auth `iam`: image with psql for the one-time role creation. Default comes from the platform chart."
+          "description": "Advanced: image with psql when the installer uses the legacy bootstrap. Default comes from the platform chart."
         }
       }
     },

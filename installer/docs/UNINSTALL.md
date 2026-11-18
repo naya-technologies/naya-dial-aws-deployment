@@ -26,12 +26,11 @@ What it does, in this order:
 It touches only what the installation owns: stacks that carry the installer's tag, repositories tagged
 `dial-install:installation=<name>`, and objects named after the installation.
 
-## License
+## License tiers
 
-Core activates a license tier with a `PERPETUAL` checkout. AWS License Manager refuses `CheckInLicense` for that
-type ("cannot be checked in"), so **a consumed unit cannot be returned through the API**. `uninstall` shows the
-consumed units; to get them back, contact AWS Marketplace seller support. Note that deleting Redis deletes the
-record of the activation, so a reinstall in the same account activates (and consumes) a unit again.
+Return this environment's provisional tiers in DIAL Admin under **License
+Management** before uninstalling. The installer reports account-wide usage.
+Historical perpetual checkouts cannot be returned through the API.
 
 ## Removing just one add-on
 

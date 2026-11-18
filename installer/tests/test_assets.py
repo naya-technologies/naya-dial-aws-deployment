@@ -103,7 +103,8 @@ class PackagedAssetsTests(Base):
         with tempfile.TemporaryDirectory() as directory:
             (Path(directory) / "helm").write_text("#!/bin/sh\n")
             (Path(directory) / "helm").chmod(0o755)
-            with mock.patch.object(tools, "PACKAGED_BIN", Path(directory)):
+            with mock.patch.object(tools, "PACKAGED_BIN", Path(directory)), \
+                    mock.patch.object(tools.platform, "system", return_value="Linux"):
                 self.assertEqual(tools.which("helm"), str(Path(directory) / "helm"))
 
 

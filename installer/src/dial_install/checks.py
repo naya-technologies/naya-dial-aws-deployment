@@ -93,35 +93,38 @@ def certificate_findings(ctx: Context) -> list[Finding]:
 
 
 def license_findings(ctx: Context) -> list[Finding]:
-    """Report the license units this account has already consumed (read only; units cannot be returned)."""
+    """Report account-wide entitlement usage without modifying checkouts."""
     from . import licenses
     if ctx.cloud.runner.dry_run:
         return []
     rows = licenses.consumed(ctx.cloud)
-    if not rows:
-        return [ok("license", "no license unit consumed in this account yet (an installation consumes one)")]
-    return [ok("license", f"already consumed in this account: {licenses.describe(rows)}. An installation consumes one unit; "
-                          "units of a PERPETUAL license cannot be returned")]
+    used = licenses.describe(rows) if rows else "none"
+    return [ok("license", f"units consumed in this account: {used}. Activate tiers in DIAL Admin after installation.")]
 
 
 def chart_findings(ctx: Context) -> list[Finding]:
     """Can this account pull the platform chart from the Marketplace registry?"""
     from . import deploy
     repository, version = deploy.chart_ref(ctx)
-    if ctx.cache.get("local_chart"):                      # vendor test of a chart that is not published yet
-        result = ctx.cloud.runner.run(["helm", "show", "chart", repository], check=False)
-        if result.returncode != 0:
-            return [fail("chart", f"cannot read the local chart {repository}", result.stderr.strip())]
-        return [ok("chart", f"local chart {repository} (not from the registry)")]
-    try:
-        deploy.registry_login(ctx.cloud, repository)
-    except Exception as error:  # noqa: BLE001 - any failure here means "cannot pull"
-        return [fail("chart", f"cannot log in to the chart registry ({error})",
-                     "Subscribe to the DIAL product in AWS Marketplace with this account, "
-                     "and make sure your AWS user may call ecr:GetAuthorizationToken.")]
-    result = ctx.cloud.runner.run(["helm", "show", "chart", repository, "--version", version], check=False)
+    local = bool(ctx.cache.get("local_chart"))
+    if not local:
+        try:
+            deploy.registry_login(ctx.cloud, repository)
+        except Exception as error:  # noqa: BLE001 - any failure here means "cannot pull"
+            return [fail("chart", f"cannot log in to the chart registry ({error})",
+                         "Subscribe to the DIAL product in AWS Marketplace with this account, "
+                         "and make sure your AWS user may call ecr:GetAuthorizationToken.")]
+    result = ctx.cloud.runner.run(["helm", "show", "chart", repository, *(["--version", version] if version else [])], check=False)
     if result.returncode != 0:
-        return [fail("chart", f"cannot pull chart {version}", result.stderr.strip() or
-                     "Check your AWS Marketplace subscription and the chart version.")]
+        message = f"cannot read the local chart {repository}" if local else f"cannot pull chart {version}"
+        return [fail("chart", message, result.stderr.strip() or "Check your AWS Marketplace subscription and the chart version.")]
+    chart_values = deploy.chart_defaults(ctx)
+    if "lic-ins" in chart_values:
+        return [fail("chart", "this chart still contains the retired license installer",
+                     "Select a chart with Core-managed licensing, or pass --chart ../charts/dial-platform to use this checkout.")]
+    if local and ctx.cfg["registry"]["provider"] != "ecr-mirror" and chart_values.get("installer", {}).get("preloadedImages"):
+        return [fail("registry", "this chart uses images preloaded in the deployment account's ECR",
+                     "Set registry.provider: ecr-mirror in dial.yaml.")]
+    if local:
+        return [ok("chart", f"local chart {repository} (not from the registry)")]
     return [ok("chart", f"chart {version} is available")]
-

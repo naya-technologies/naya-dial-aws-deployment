@@ -1,8 +1,7 @@
-"""How many license units this AWS account has consumed (AWS License Manager, read only).
+"""Report account-wide consumed AWS License Manager entitlement units (read only).
 
-One installation is meant to consume one unit, once. Units of PERPETUAL licenses cannot be returned through the API, so the
-installer never changes this number; it only reports it, to make an unexpected extra consumption visible (`check`, `status`,
-`uninstall`).
+Core owns tier activation and provisional renewal. Historical PERPETUAL consumption may also be present and cannot be
+returned through the API. The installer only reports usage; it never checks units out or returns them.
 """
 
 from __future__ import annotations

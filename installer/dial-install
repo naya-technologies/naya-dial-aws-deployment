@@ -13,8 +13,12 @@ import sys
 sys.exit(0 if sys.version_info >= (3, 9) else 1)
 PY
 
-# Tools installed by `dial-install install-tools` live here.
-export PATH="$HERE/bin:$HOME/.dial-install/bin:$PATH"
+# The bundled tools and the original tool cache contain Linux binaries.
+if [[ "$(uname -s)" == Darwin ]]; then
+  export PATH="$HOME/.dial-install/bin/darwin-$(uname -m):$PATH"
+else
+  export PATH="$HERE/bin:$HOME/.dial-install/bin:$PATH"
+fi
 export PYTHONPATH="$HERE/src${PYTHONPATH:+:$PYTHONPATH}"
 export PYTHONDONTWRITEBYTECODE=1
 

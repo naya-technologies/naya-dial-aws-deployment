@@ -24,12 +24,11 @@ def check(ctx):
 
 
 def before_helm(ctx, say):
-    """With database.auth: iam, create the PostgreSQL role DIAL Admin signs in with (idempotent)."""
-    if ctx.cfg["database"]["auth"] != "iam":
-        return
+    """Prepare Core licensing storage and the optional Admin IAM role before Helm starts the pods."""
     from dial_install import db_bootstrap, deploy, values
     effective = values.effective(ctx, deploy.chart_defaults(ctx))
-    db_bootstrap.run(ctx, effective, say)
+    if ctx.cfg["database"]["auth"] == "iam" or db_bootstrap.uses_postgres_licensing(effective):
+        db_bootstrap.run(ctx, effective, say)
 
 
 def parameters(ctx):

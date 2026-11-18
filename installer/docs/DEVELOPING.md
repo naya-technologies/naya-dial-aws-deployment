@@ -123,21 +123,12 @@ Hardening backlog (needs a validated install first, because narrowing a policy c
 
 ## Known issues and limitations
 
-- **Chat sign-in with `dial-core` 2026.10.1 (server 0.45.7).** `GET /v1/bucket` returns `401 Unknown api key` for a valid
-  token, while `/openai/models` and `/v1/user/info` return 200. `Proxy.authorizeRequest` turns any exception from
-  `LicenseChecker.onboardUser` into that message. What is known: Core needs the Redis keys `licKey`, `apilicKey` and
-  `activeTiersKey` (the installer creates the last two when the license installer does not, see
-  `deploy.ensure_api_key_license`); `LicenseChecker.findUsersMax` parses `Entitlement.value()` as JSON, which is `null` for
-  Marketplace contract entitlements; and `increaseTierUsage` reads the checkout token by serializing an AWS SDK v2 response
-  with Jackson, so the token is lost after a successful checkout and the consumed unit is never recorded. A `PERPETUAL`
-  checkout cannot be checked in, so a unit consumed this way cannot be returned through the API.
-- `database.auth: iam` needs a `naya-dial-postgres` repository (tag `15-alpine`) in the product registry for the one-time Job.
-  Until it is published, set `database.bootstrap_image`, or leave `database.auth` at `password`.
-- The IAM database login covers DIAL Admin only. The Deployment Manager and Superset keep the password.
+- JDBC bootstrap uses the Core image for licensing migrations and the optional Admin IAM login.
+  Legacy bootstrap uses the PostgreSQL client image pinned in the release manifest or overridden by `database.bootstrap_image`.
+- Core uses its dedicated IAM database login. Admin IAM authentication is optional. Deployment Manager and Superset use password authentication.
 - Changing the instance type of an existing node group fails in CloudFormation (the node group has a fixed name, so the
   replacement collides). Create a new group or reinstall.
 - Cluster Autoscaler manages the `dynamic` node group only, by design; the other groups keep `min = max`.
-- `dial-lic-ins` prints the API key of the Admin project in the Core logs ("Trying to onboard api-key").
 - Cilium images are not part of the Marketplace listing; the installer copies them from `quay.io/cilium`.
 - Several allowed source networks (`network.allowed_cidr`) are limited to five.
 

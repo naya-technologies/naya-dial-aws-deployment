@@ -73,12 +73,6 @@ dependencies:
     repository: https://d2w6p7i2gnitgl.cloudfront.net/helm
     condition: deployment-manager.enabled
 
-  - name: dial-extension
-    alias: lic-ins
-    version: 2.1.0
-    repository: https://d2w6p7i2gnitgl.cloudfront.net/helm
-    condition: lic-ins.enabled
-
   - name: influxdb2
     alias: influxdb
     version: 2.1.2

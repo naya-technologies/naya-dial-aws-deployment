@@ -10,6 +10,7 @@ import hashlib
 import io
 import os
 import platform
+import ssl
 import stat
 import tarfile
 import urllib.request
@@ -19,6 +20,8 @@ from . import ROOT
 from .errors import InstallerError
 
 BIN_DIR = Path.home() / ".dial-install" / "bin"
+if platform.system() == "Darwin":
+    BIN_DIR /= f"darwin-{platform.machine()}"
 PACKAGED_BIN = ROOT / "bin"
 
 
@@ -35,7 +38,12 @@ def machine_arch(override: str | None = None) -> str:
 
 def _fetch(url: str) -> bytes:
     try:
-        with urllib.request.urlopen(url, timeout=60) as response:  # noqa: S310 (https URLs only)
+        context = None
+        trust = ssl.get_default_verify_paths()
+        system_bundle = Path("/etc/ssl/cert.pem")
+        if platform.system() == "Darwin" and not (trust.cafile or trust.capath) and system_bundle.is_file():
+            context = ssl.create_default_context(cafile=str(system_bundle))
+        with urllib.request.urlopen(url, timeout=60, context=context) as response:  # noqa: S310 (https URLs only)
             return response.read()
     except OSError as error:
         raise InstallerError(f"Download failed: {url}", f"{error}. Check internet access and try again.") from error
@@ -75,22 +83,24 @@ def _from_tarball(data: bytes, member_suffix: str) -> bytes:
 
 def install_kubectl(version: str, directory: Path | None = None) -> Path:
     arch = machine_arch()
-    base = f"https://dl.k8s.io/release/{version}/bin/linux/{arch}/kubectl"
+    os_name = platform.system().lower()
+    base = f"https://dl.k8s.io/release/{version}/bin/{os_name}/{arch}/kubectl"
     return _install_binary("kubectl", _verified(base, base + ".sha256"), directory)
 
 
 def install_helm(version: str, directory: Path | None = None) -> Path:
     arch = machine_arch()
-    url = f"https://get.helm.sh/helm-{version}-linux-{arch}.tar.gz"
+    platform_dir = f"{platform.system().lower()}-{arch}"
+    url = f"https://get.helm.sh/helm-{version}-{platform_dir}.tar.gz"
     data = _verified(url, url + ".sha256sum")
-    return _install_binary("helm", _from_tarball(data, f"linux-{arch}/helm"), directory)
+    return _install_binary("helm", _from_tarball(data, f"{platform_dir}/helm"), directory)
 
 
 def install_crane(version: str, directory: Path | None = None) -> Path:
     """crane copies images registry-to-registry (all architectures, same digest) without storing layers locally."""
     arch = {"amd64": "x86_64", "arm64": "arm64"}[machine_arch()]
     base = f"https://github.com/google/go-containerregistry/releases/download/{version}"
-    archive = f"go-containerregistry_Linux_{arch}.tar.gz"
+    archive = f"go-containerregistry_{platform.system()}_{arch}.tar.gz"
     data = _fetch(f"{base}/{archive}")
     sums = {line.split()[1]: line.split()[0] for line in _fetch(f"{base}/checksums.txt").decode().splitlines() if line.strip()}
     if hashlib.sha256(data).hexdigest() != sums.get(archive, "").lower():
@@ -99,7 +109,8 @@ def install_crane(version: str, directory: Path | None = None) -> Path:
 
 
 def which(tool: str) -> str | None:
-    for directory in [str(PACKAGED_BIN), str(BIN_DIR), *os.environ.get("PATH", "").split(os.pathsep)]:
+    bundled = [str(PACKAGED_BIN)] if platform.system() == "Linux" else []
+    for directory in [*bundled, str(BIN_DIR), *os.environ.get("PATH", "").split(os.pathsep)]:
         candidate = Path(directory) / tool
         if candidate.is_file() and os.access(candidate, os.X_OK):
             return str(candidate)
