@@ -1,5 +1,6 @@
 """Add-ons: catalog, rendering, install / upgrade / remove against a scripted fake of AWS, Kubernetes and Helm."""
 
+import copy
 import json
 import subprocess
 import tempfile
@@ -21,6 +22,7 @@ SCHEMA_ID = "https://DialAIBrain"
 REGISTRY_TAGS = ["2026.11.1", "sha-781d641", "2026.11.3", "2026.11.2", "sha-54a7ea9"]       # what `crane ls` shows (not in order)
 LATEST = "2026.11.3"
 APP = "dial-x-rag"
+SAMPLE_REQUIRED = {"guardrail_id": "abc123def456", "guardrail_version": "1"}      # a value for every required catalog setting
 
 
 class Cluster:
@@ -167,7 +169,10 @@ class CatalogTests(Base):
     def test_every_catalog_entry_renders_without_unknown_tokens_and_leaves_none_behind(self):
         ctx = make_ctx()
         for name, entry in addons.load_catalog().items():
-            document = addons.render_values(ctx, entry)
+            ctx.cache.setdefault("addon_stack_outputs", {})[name] = {"RoleArn": "arn:aws:iam::123456789012:role/r"}
+            required = {key: SAMPLE_REQUIRED[key] for key, option in addons.declared_options(entry).items() if option.get("required")}
+            options = addons.resolve_options(entry, None, required, ctx.region)
+            document = addons.render_values(ctx, entry, options)
             self.assertNotIn("PLACEHOLDER_", json.dumps(document), name)
 
     def test_values_point_at_the_customers_registry_and_keep_the_service_private(self):
@@ -349,6 +354,39 @@ class InstallTests(Base):
         self.assertTrue(ctx.cloud.runner.writes)
 
 
+class PublicSourceRegistryTests(Base):
+    """Amazon ECR Public as the source: anyone may pull, so the installer logs in to nothing but the customer's own registry."""
+
+    def public_entry(self):
+        entry = copy.deepcopy(addons.entry_for("ai-brain"))
+        entry["source"]["registry"] = "public.ecr.aws/naya"
+        return entry
+
+    def test_no_login_is_made_to_a_public_source_and_the_target_still_is(self):
+        from dial_install import mirror
+        ctx = new_ctx(Cluster())
+        directory = mirror._docker_config(ctx, ["123456789012.dkr.ecr.us-east-1.amazonaws.com", "public.ecr.aws"])
+        try:
+            auths = json.loads((directory / "config.json").read_text())["auths"]
+        finally:
+            import shutil
+            shutil.rmtree(directory)
+        self.assertEqual(list(auths), ["123456789012.dkr.ecr.us-east-1.amazonaws.com"])
+        self.assertEqual(len(ctx.cloud.runner.called("aws", "ecr", "get-login-password")), 1)
+
+    def test_the_newest_version_and_the_copy_work_with_a_public_source(self):
+        cluster = Cluster()
+        ctx = new_ctx(cluster)
+        entry = self.public_entry()
+        with tools_patch():
+            pinned = addons.pin(ctx, entry)
+            addons.copy_images(ctx, pinned, lambda _m: None)
+        self.assertEqual(pinned["version"], LATEST)
+        self.assertEqual(ctx.cloud.runner.called("/usr/bin/crane", "ls")[0][2], "public.ecr.aws/naya/naya-dial-ai-brain")
+        self.assertEqual(len(ctx.cloud.runner.called("aws", "ecr", "get-login-password")), 1)        # only the customer's registry, for the copy
+        self.assertTrue(any(e.startswith(f"copy public.ecr.aws/naya/naya-dial-ai-brain:{LATEST} -> 123456789012") for e in cluster.events))
+
+
 class UpgradeTests(Base):
     def run_upgrade(self, cluster):
         ctx = new_ctx(cluster)
@@ -362,7 +400,7 @@ class UpgradeTests(Base):
         cluster = Cluster(addons_installed={"ai-brain": addon_values(version)})
         _, changed, text = self.run_upgrade(cluster)
         self.assertFalse(changed)
-        self.assertIn("Nothing to do", text)
+        self.assertIn("Nothing to change", text)
         self.assertEqual(cluster.events, [])
 
     def test_a_new_version_is_copied_and_deployed_without_touching_core_when_the_registration_is_the_same(self):
@@ -688,7 +726,7 @@ class NodeGroupTests(Base):
         runner.responses[("aws", "cloudformation", "describe-stacks")] = cluster.cfn_describe
         uninstaller = uninstall.Uninstaller(ctx, lambda _m: None)
         self.assertEqual(uninstaller.addon_node_groups(), ["ai-rag"])
-        self.assertIn("node group of add-on ai-rag", "\n".join(uninstaller.plan()))
+        self.assertIn("(add-on ai-rag)", "\n".join(uninstaller.plan()))
         uninstaller.addon_stacks()
         self.assertEqual(cluster.node_stacks, {})
 

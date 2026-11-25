@@ -1,0 +1,57 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'IAM role of the Bedrock Guardrail interceptor (dial-install add-on): trusted by its own service account only, allowed ApplyGuardrail on one guardrail only'
+
+Parameters:
+  OIDCProviderArn:
+    Type: String
+  OIDCProviderIssuer:
+    Type: String
+    Description: EKS OIDC issuer host and path without the https:// prefix
+  KubernetesNamespace:
+    Type: String
+  ServiceAccountName:
+    Type: String
+  GuardrailArn:
+    Type: String
+    Description: arn:aws:bedrock:<region>:<account>:guardrail/<id>
+
+Resources:
+  InterceptorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-role'
+      AssumeRolePolicyDocument: !Sub
+        - |
+          {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Principal": { "Federated": "${ProviderArn}" },
+                "Action": "sts:AssumeRoleWithWebIdentity",
+                "Condition": {
+                  "StringEquals": {
+                    "${Issuer}:aud": "sts.amazonaws.com",
+                    "${Issuer}:sub": "system:serviceaccount:${Namespace}:${ServiceAccount}"
+                  }
+                }
+              }
+            ]
+          }
+        - ProviderArn: !Ref OIDCProviderArn
+          Issuer: !Ref OIDCProviderIssuer
+          Namespace: !Ref KubernetesNamespace
+          ServiceAccount: !Ref ServiceAccountName
+      Policies:
+        - PolicyName: apply-guardrail
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: bedrock:ApplyGuardrail
+                Resource: !Ref GuardrailArn
+
+Outputs:
+  RoleArn:
+    Description: ARN of the interceptor's role (annotation of its service account)
+    Value: !GetAtt InterceptorRole.Arn

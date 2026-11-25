@@ -108,6 +108,7 @@ class Wizard:
             features["desktop_app"] = True
         if features:
             answers["features"] = features
+        answers["power"] = self._power()
         if not self.yes_no("Copy the product images into your own private ECR (recommended)?", True):
             answers["registry"] = {"provider": "public"}
 
@@ -155,6 +156,20 @@ class Wizard:
         if cidrs != ["0.0.0.0/0"]:
             network["allowed_cidrs"] = cidrs
         return network
+
+    def _power(self) -> dict:
+        """The sleep / wake state machines are always created; the schedule is optional."""
+        if not self.yes_no("Put the environment to sleep and wake it up automatically on a schedule (saves cost)?", False):
+            return {}
+        clock, hint = r"([01][0-9]|2[0-3]):[0-5][0-9]", "Use HH:MM, for example 19:30."
+        return {"schedule": {
+            "sleep": self.text("Time to go to sleep", "19:30", clock, hint),
+            "wake": self.text("Time to wake up", "08:40", clock, hint),
+            "days": self.text("On which days (cron style)", "SUN-THU",
+                              r"(SUN|MON|TUE|WED|THU|FRI|SAT)(-(SUN|MON|TUE|WED|THU|FRI|SAT))?(,(SUN|MON|TUE|WED|THU|FRI|SAT)(-(SUN|MON|TUE|WED|THU|FRI|SAT))?)*",
+                              "For example SUN-THU, MON-FRI or MON,WED,FRI."),
+            "timezone": self.text("Time zone", "Asia/Jerusalem", r"[A-Za-z_]+(/[A-Za-z0-9_+-]+)*", "For example Asia/Jerusalem or UTC."),
+        }}
 
     def _identity(self) -> dict:
         kind = self.choice("How do users sign in?", ["Amazon Cognito users", "SAML (your identity provider, through Cognito)"])
@@ -239,6 +254,14 @@ def render_config(answers: dict) -> str:
             lines.append("  analytics: false")
         if features.get("desktop_app"):
             lines.append("  desktop_app: true               # the DIAL Desktop application can sign in (Cognito app client nayadial://)")
+    schedule = (answers.get("power") or {}).get("schedule")
+    if schedule:
+        lines += ["", "power:                            # sleep / wake: the state machines <name>-sleep and <name>-wake always exist",
+                  "  schedule:",
+                  f"    sleep: \"{schedule['sleep']}\"",
+                  f"    wake: \"{schedule['wake']}\"",
+                  f"    days: {schedule['days']}",
+                  f"    timezone: {schedule['timezone']}"]
     if answers.get("registry"):
         lines += ["", "registry:", "  provider: public                # pull images directly from the AWS Marketplace registry"]
     lines += [

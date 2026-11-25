@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from . import __version__, adapters, addons, checks, desktop, licenses, cilium as cilium_mod, config, deploy, infra, mirror, modules as modules_mod, releases, uninstall as uninstall_mod
+from . import __version__, adapters, addons, checks, desktop, power, licenses, cilium as cilium_mod, config, deploy, infra, mirror, modules as modules_mod, releases, uninstall as uninstall_mod
 from .bootstrap import Bootstrap
 from .cloud import Cloud
 from .context import Context
@@ -222,6 +222,7 @@ def cmd_apply(options: Options, runner: Runner, say: Say, ask: Callable[[str], s
         say("Cancelled. Nothing was changed.")
         return 0
 
+    power.require_awake(ctx)                        # an installation put to sleep has no nodes: wake it first
     say("\n[1/2] Infrastructure")
     infra.deploy(ctx, modules, say)
 
@@ -269,6 +270,7 @@ def _verify_and_report(ctx: Context, say: Say, *, first_install: bool = False) -
     if first_install:
         say("\nActivate the tiers you need in DIAL Admin → License Management before onboarding users or API keys.")
         _print_first_user(ctx, say)
+    power.deploy(ctx, say)
     _deliver_desktop_file(ctx, say)
 
 
@@ -349,6 +351,7 @@ def cmd_upgrade(options: Options, runner: Runner, say: Say, ask: Callable[[str],
         infra.load_outputs(ctx, modules)
 
     ctx.cloud.aws("eks", "update-kubeconfig", "--name", ctx.cluster_name, "--alias", ctx.cloud.kube_context, write=True)
+    power.require_awake(ctx)
     current = deploy.installed(ctx)
     if current is None and not runner.dry_run:
         raise InstallerError("DIAL is not installed in this cluster yet.", "Run `./dial-install apply` first.")
@@ -456,6 +459,7 @@ def _addon_context(options: Options, runner: Runner, say: Say) -> Context | None
         return None
     infra.load_outputs(ctx, modules)
     ctx.cloud.aws("eks", "update-kubeconfig", "--name", ctx.cluster_name, "--alias", ctx.cloud.kube_context, write=True)
+    power.require_awake(ctx)
     return ctx
 
 
@@ -481,7 +485,7 @@ def cmd_addons_list(options: Options, runner: Runner, say: Say) -> int:
 def cmd_addons_install(options: Options, runner: Runner, say: Say, ask: Callable[[str], str] = input) -> int:
     entry = addons.entry_for(options.addon)
     requested, settings = addons.split_settings(options.addon_settings)
-    addons.resolve_options(entry, None, settings)         # a wrong flag fails before anything is touched
+    addons.check_given(entry, settings)                   # a wrong flag fails before anything is touched
     ctx = _addon_context(options, runner, say)
     if ctx is None:
         return 1
@@ -491,25 +495,27 @@ def cmd_addons_install(options: Options, runner: Runner, say: Say, ask: Callable
         say("Cancelled. Nothing was changed.")
         return 0
     addons.install(ctx, options.addon, say, options.addon_settings)
+    power.refresh_if_installed(ctx, say)              # the sleep / wake configuration must know the add-on's nodes and workloads
     return 0
 
 
 def cmd_addons_upgrade(options: Options, runner: Runner, say: Say, ask: Callable[[str], str] = input) -> int:
     entry = addons.entry_for(options.addon)
     requested, settings = addons.split_settings(options.addon_settings)
-    addons.resolve_options(entry, None, settings)
+    addons.check_given(entry, settings)
     ctx = _addon_context(options, runner, say)
     if ctx is None:
         return 1
     entry = addons.pin(ctx, entry, requested)
     state = addons.installed(ctx).get(options.addon)
-    if addons.is_current(entry, state, settings):
-        say(f"{entry['display_name']} is already at {entry['version']}. Nothing to do.")
+    if addons.is_current(entry, state, settings, ctx.region):
+        addons.upgrade(ctx, options.addon, say, options.addon_settings)      # nothing to change; an add-on with checks is checked again
         return 0
     if not _confirm(options, say, f"Upgrade {entry['display_name']} {state['version'] if state else '?'} -> {entry['version']}?", ask):
         say("Cancelled. Nothing was changed.")
         return 0
-    addons.upgrade(ctx, options.addon, say, options.addon_settings)
+    if addons.upgrade(ctx, options.addon, say, options.addon_settings):
+        power.refresh_if_installed(ctx, say)
     return 0
 
 
@@ -526,8 +532,23 @@ def cmd_addons_remove(options: Options, runner: Runner, say: Say, ask: Callable[
             say("Cancelled. Nothing was changed.")
             return 0
     left = addons.remove(ctx, options.addon, say, keep_images=options.keep_images)
+    power.refresh_if_installed(ctx, say)
     if left:
         say("\nSome things are still there; run the command again: " + "; ".join(left))
         return 1
     say(f"\n{entry['display_name']} is removed. Nothing of it is left." if not runner.dry_run else "\nDry run: nothing was changed.")
+    return 0
+
+
+# ---- sleep / wake ----------------------------------------------------------------------------------------------------------
+def cmd_power(options: Options, runner: Runner, say: Say, action: str, ask: Callable[[str], str] = input) -> int:
+    """Start the state machine <name>-sleep or <name>-wake and wait until it has finished."""
+    ctx, modules = build_context(options, runner)
+    infra.load_outputs(ctx, modules)
+    question = ("Put the installation to sleep? Its nodes and database stop and DIAL is unavailable until `./dial-install wake`."
+                if action == "sleep" else "Wake the installation up?")
+    if not _confirm(options, say, question, ask):
+        say("Cancelled. Nothing was changed.")
+        return 0
+    power.run(ctx, action, say)
     return 0

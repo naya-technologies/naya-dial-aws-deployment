@@ -1,0 +1,67 @@
+# Catalog entry of one add-on (format dial-addon/v1). See docs/ADDONS.md.
+apiVersion: dial-addon/v1
+id: bedrock-guardrail
+display_name: Bedrock Guardrail interceptor
+description: Checks every chat message and every answer with an Amazon Bedrock guardrail (ApplyGuardrail) before it goes through.
+version: 1.0.1                  # pinned: this image's tags are not YYYY.M.N, and only a tested version is installed
+
+source:
+  registry: public.ecr.aws/e8r1u6x9
+
+images:
+  - repository: naya-dial-x-bedrock-guardrail-interceptor
+    digest: sha256:7f573ce0ff7151edc71664d180ddad5b7016dc4be033fdd12f800e701274ef3f   # the copy is refused if the tag points elsewhere
+
+chart: charts/dial-extension-2.1.0.tgz
+values: values.yaml
+service: bedrock-guardrail      # Kubernetes service and service account: <platform release>-bedrock-guardrail
+
+# Its own IAM role (CloudFormation stack <name>-addon-bedrock-guardrail): trusted by this add-on's service account only,
+# allowed bedrock:ApplyGuardrail on this one guardrail only. Parameters come from hooks.py.
+stack:
+  template: stacks/bedrock-guardrail-role.yaml
+
+options:
+  guardrail_id:
+    required: true
+    flag: --guardrail-id
+    pattern: '^[a-z0-9]{1,64}$'
+    description: ID of the Amazon Bedrock guardrail (not its ARN)
+  guardrail_version:
+    required: true
+    flag: --guardrail-version
+    pattern: '^([1-9][0-9]{0,7}|DRAFT)$'
+    description: Numbered version of the guardrail. DRAFT is refused unless --allow-draft is given
+  allow_draft:
+    default: 'false'
+    flag: --allow-draft
+    pattern: '^(true|false)$'
+    description: Accept the DRAFT version of the guardrail (not for production)
+  bedrock_region:
+    default: '{region}'
+    flag: --bedrock-region
+    pattern: '^[a-z]{2}(-[a-z]+)+-[0-9]$'
+    description: Region of the guardrail. Default is the region of the installation
+  guardrail_deployments:
+    default: default.model
+    flag: --guardrail-deployments
+    pattern: '^[A-Za-z0-9][A-Za-z0-9._:/-]*(,[A-Za-z0-9][A-Za-z0-9._:/-]*)*$'
+    description: Comma-separated DIAL deployments (models, applications) the interceptor is attached to
+  guardrail_global:
+    default: 'false'
+    flag: --guardrail-global
+    pattern: '^(true|false)$'
+    description: Attach it to every deployment instead (DIAL Core globalInterceptors), applications included
+
+# Registered in DIAL Core's configuration. Tokens as in values.yaml.
+core:
+  interceptors:
+    bedrock-guardrail:
+      displayName: Bedrock Guardrail
+      description: Checks messages and answers with Amazon Bedrock Guardrails.
+      endpoint: PLACEHOLDER_SERVICE_URL/openai/deployments/bedrock-guardrail/chat/completions   # always the full path
+      forwardAuthToken: false   # it calls Core with the per-request key and Bedrock with its IAM role
+  attach:
+    interceptor: bedrock-guardrail
+    deployments_option: guardrail_deployments
+    global_option: guardrail_global

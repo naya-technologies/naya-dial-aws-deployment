@@ -50,7 +50,7 @@ already contains them and needs no internet access at all, only access to AWS.
 Answer the questions; press Enter to accept the value in brackets. You will be asked for the region, the domain, the
 host name of every service (chat, admin, core, themes, grafana, superset, flows, flows-core: the proposal is `<service>.<your domain>`, and you can
 choose any other name for each one), the certificate ARN, whether to create a new network or use an existing one, whether the application is internal or public,
-how users sign in, and whether to support the DIAL Desktop application. At the end it writes two files:
+how users sign in, and whether to support the DIAL Desktop application, and whether the environment should sleep and wake on a schedule ([SLEEP_WAKE.md](SLEEP_WAKE.md)). At the end it writes two files:
 
 - `dial.yaml` - your configuration. Safe to read and edit.
 - `dial-secrets.json` - random passwords and keys DIAL needs.

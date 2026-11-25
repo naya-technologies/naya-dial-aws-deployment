@@ -55,6 +55,35 @@ Resources:
       VpcEndpointType: Gateway
       RouteTableIds: [!Ref PrivateRouteTableId]
 
+  # Needed by the sleep / wake worker Lambda (it runs in the VPC): its lock table, the database and the node groups' scaling groups.
+  DynamoDBEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPCId
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.dynamodb'
+      VpcEndpointType: Gateway
+      RouteTableIds: [!Ref PrivateRouteTableId]
+
+  RDSEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPCId
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.rds'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref PrivateSubnet1Id, !Ref PrivateSubnet2Id]
+      SecurityGroupIds: [!Ref EndpointSecurityGroupId]
+
+  AutoScalingEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPCId
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.autoscaling'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref PrivateSubnet1Id, !Ref PrivateSubnet2Id]
+      SecurityGroupIds: [!Ref EndpointSecurityGroupId]
+
   STSEndpoint:
     Type: AWS::EC2::VPCEndpoint
     Properties:

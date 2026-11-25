@@ -379,7 +379,10 @@
           "description": "EKS version. Default comes from release.yaml."
         },
         "cni": {
-          "enum": ["vpc-cni", "cilium"],
+          "enum": [
+            "vpc-cni",
+            "cilium"
+          ],
           "default": "vpc-cni",
           "description": "Network plugin. `vpc-cni` gives pods VPC addresses (default). `cilium` uses an overlay network (VXLAN) with its own pod range; load balancers then target nodes instead of pods."
         },
@@ -472,6 +475,51 @@
           "type": "string",
           "pattern": "^oci://[a-z0-9.-]+(:[0-9]+)?/.+[^/]$",
           "description": "Where the platform chart and the product images are published: oci://<registry host>/<repository prefix>. Default comes from installer.yaml. Set it to use another AWS account."
+        }
+      }
+    },
+    "power": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Sleep / wake control: two Step Functions state machines (<name>-sleep, <name>-wake) are always created; with `schedule` they also run automatically.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Create the sleep / wake control (default true)."
+        },
+        "schedule": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "sleep",
+            "wake"
+          ],
+          "description": "Put the environment to sleep and wake it up automatically (EventBridge Scheduler). Leave out for no schedule.",
+          "properties": {
+            "sleep": {
+              "type": "string",
+              "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+              "description": "Time to sleep, HH:MM."
+            },
+            "wake": {
+              "type": "string",
+              "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+              "description": "Time to wake up, HH:MM."
+            },
+            "days": {
+              "type": "string",
+              "default": "SUN-THU",
+              "pattern": "^(SUN|MON|TUE|WED|THU|FRI|SAT)(-(SUN|MON|TUE|WED|THU|FRI|SAT))?(,(SUN|MON|TUE|WED|THU|FRI|SAT)(-(SUN|MON|TUE|WED|THU|FRI|SAT))?)*$",
+              "description": "Days, as in a cron expression: SUN-THU, MON-FRI, MON,WED,FRI."
+            },
+            "timezone": {
+              "type": "string",
+              "default": "Asia/Jerusalem",
+              "pattern": "^[A-Za-z_]+(/[A-Za-z0-9_+-]+)*$",
+              "description": "IANA time zone of the times."
+            }
+          }
         }
       }
     }

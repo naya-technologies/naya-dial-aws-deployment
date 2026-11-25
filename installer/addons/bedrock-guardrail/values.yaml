@@ -1,0 +1,68 @@
+# Values of the generic `dial-extension` chart for the Bedrock Guardrail interceptor. The image is used as it is.
+# Reached only by DIAL Core inside the cluster: no ingress. AWS access comes only from IRSA on its own service account;
+# never put AWS_* credentials in its environment.
+fullnameOverride: PLACEHOLDER_DIAL_RELEASE_NAME-bedrock-guardrail
+replicaCount: 1
+image:
+  registry: PLACEHOLDER_IMAGE_REGISTRY
+  repository: naya-dial-x-bedrock-guardrail-interceptor
+  tag: 'PLACEHOLDER_ADDON_VERSION'
+  pullPolicy: IfNotPresent
+containerPorts:
+  http: 5000                    # the image listens on $PORT; PORT below must be the same number
+service:
+  type: ClusterIP
+  ports:
+    http: 80
+nodeSelector:
+  workload: core
+serviceAccount:
+  create: true
+  name: PLACEHOLDER_DIAL_RELEASE_NAME-bedrock-guardrail
+  annotations:
+    eks.amazonaws.com/role-arn: PLACEHOLDER_STACK_ROLE_ARN
+  automountServiceAccountToken: false
+automountServiceAccountToken: false
+podSecurityContext:
+  enabled: true
+  fsGroup: 10001
+containerSecurityContext:
+  enabled: true
+  runAsUser: 10001              # the user of the image
+  runAsGroup: 10001
+  runAsNonRoot: true
+env:
+  PORT: "5000"
+  DIAL_URL: PLACEHOLDER_DIAL_CORE_URL
+  GUARDRAIL_ID: PLACEHOLDER_GUARDRAIL_ID
+  GUARDRAIL_VERSION: PLACEHOLDER_GUARDRAIL_VERSION
+  BEDROCK_REGION: PLACEHOLDER_BEDROCK_REGION
+  GUARDRAIL_CHECK_INPUT: "true"
+  GUARDRAIL_CHECK_OUTPUT: "true"
+  GUARDRAIL_FAIL_OPEN: "false"
+ingress:
+  enabled: false
+livenessProbe:
+  enabled: true
+  httpGet: {path: /health, port: http}
+  initialDelaySeconds: 20
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+readinessProbe:
+  enabled: true
+  httpGet: {path: /health, port: http}
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+startupProbe:
+  enabled: true
+  httpGet: {path: /health, port: http}
+  initialDelaySeconds: 3
+  periodSeconds: 5
+  timeoutSeconds: 5
+  failureThreshold: 30
+resources:
+  requests: {cpu: 100m, memory: 128Mi}
+  limits: {cpu: 500m, memory: 256Mi}

@@ -15,6 +15,8 @@ What it does, in this order:
 1. Reports the AWS Marketplace license usage (see "License" below).
 2. Removes the ingresses and the Istio gateway while the load balancer controller still runs, waits until the
    load balancers are gone, then uninstalls the Helm releases and deletes the volumes and namespaces.
+   A database stopped by the sleep state machine is started first (AWS cannot delete a stopped database). The sleep / wake control
+   (`<name>-sleep-wake` and `<name>-sleep-wake-artifacts`) is removed after the workloads.
    Installed add-ons are uninstalled first, and the node groups of add-ons that have one (CloudFormation stacks `<name>-addon-<id>`) are deleted right after the workloads.
 3. Removes the private DNS zone `<namespace>.knative.<name>.internal`.
 4. Turns off the database deletion protection.

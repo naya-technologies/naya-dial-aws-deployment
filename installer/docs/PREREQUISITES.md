@@ -41,10 +41,19 @@ Set `registry.provider: public` to skip the copy and pull straight from the Mark
 
 Add-ons (`./dial-install add-ons`, see [ADDONS.md](ADDONS.md)) come from Naya's registry, not from the Marketplace. For them:
 
-- your AWS account must be allowed to pull from that registry (`ecr:GetAuthorizationToken` for you; Naya allows your account on its side);
+- the machine that runs the installer must reach that registry. A public one (Amazon ECR Public, `public.ecr.aws`) needs no account or login; for a private one your AWS account must be allowed to pull (`ecr:GetAuthorizationToken` for you; Naya allows your account on its side);
 - the ECR permissions listed above (the images are copied into your registry);
 - an add-on that has its own nodes (AI RAG) creates a CloudFormation stack with a node group: `cloudformation:*` on that stack, `eks:*Nodegroup*`, and EC2 quota
   for its instance type (for the default, 4 vCPU of On-Demand standard instances).
+
+For the Bedrock Guardrail interceptor (`bedrock-guardrail`): a published Amazon Bedrock guardrail in your account, `bedrock:GetGuardrail` for you
+(the installer checks it), and permission to create an IAM role through CloudFormation (`iam:CreateRole`, `iam:PutRolePolicy`, `iam:DeleteRole`,
+`iam:DeleteRolePolicy`, `iam:GetRole`).
+
+## Sleep / wake
+
+Created with every installation: your user needs to create Lambda functions, Step Functions state machines, a DynamoDB table, S3 buckets,
+EventBridge Scheduler schedules, SQS queues, IAM roles and an EKS access entry through CloudFormation (`AdministratorAccess` while you install covers it).
 
 ## Database sign-in with the IAM role (optional)
 

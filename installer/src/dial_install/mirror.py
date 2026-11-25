@@ -205,10 +205,21 @@ def outside_registry(ctx: Context, chart_values: dict) -> list[str]:
 
 
 # ---- copying -----------------------------------------------------------------------------------------------------
+PUBLIC_REGISTRY_HOST = "public.ecr.aws"      # Amazon ECR Public: anyone may pull, no login (and no AWS account) needed
+
+
+def is_public_registry(host: str) -> bool:
+    """True for `public.ecr.aws` and for `public.ecr.aws/<alias>` (a registry reference may carry the alias)."""
+    return host.split("/", 1)[0] == PUBLIC_REGISTRY_HOST
+
+
 def _docker_config(ctx: Context, hosts: list[str]) -> Path:
-    """A private docker config with a fresh ECR token per registry (never passed on a command line)."""
+    """A private docker config with a fresh ECR token per registry (never passed on a command line).
+    A public registry (Amazon ECR Public) needs no login and gets no entry."""
     auths = {}
     for host in hosts:
+        if is_public_registry(host):
+            continue
         region = _region_of(host, ctx.region)
         argv = ["aws", "ecr", "get-login-password", "--region", region]
         if ctx.cloud.profile:

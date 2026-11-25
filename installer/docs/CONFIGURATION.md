@@ -43,6 +43,7 @@ working examples are in [examples/](../examples/).
 | `features.analytics` | `true` | Superset, Grafana, InfluxDB. |
 | `features.deployment_manager` | `true` | The application deployment manager. |
 | `features.desktop_app` | `false` | Support the DIAL Desktop application: `apply` creates its Cognito app client (public, no secret, authorization code flow, callbacks `nayadial://auth/callback` and `nayadial://auth/logout`, refresh token 30 days) and the chat is told its id (`/config.js` then contains `desktop.cognitoClientId`). Turning it on for an installed environment needs `./dial-install upgrade --with-infra`. See below. |
+| `power.schedule` | none | Sleep and wake automatically: `sleep`, `wake` (HH:MM), `days` (default `SUN-THU`), `timezone` (default `Asia/Jerusalem`). Without it the state machines `<name>-sleep` and `<name>-wake` exist and are started by hand. `power.enabled: false`: no sleep / wake control. See [SLEEP_WAKE.md](SLEEP_WAKE.md). |
 | `features.container_logs` | `true` | Send container logs and metrics to CloudWatch (Container Insights). |
 
 Edits to this file take effect on the next `apply` (infrastructure) or `upgrade` (platform settings).
