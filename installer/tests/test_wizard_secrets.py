@@ -54,7 +54,7 @@ class WizardTests(Base):
 
     def test_simple_flow(self):
         answers = self.run_wizard(["acme", "us-east-1", "", "dial.acme.example", "y", CERT,
-                                   "1", "", "1", "", "1", "1", "y", "n", "y", SECRET])
+                                   "1", "", "1", "", "1", "1", "y", "n", "n", "y", SECRET])
         text = wizard.render_config(answers)
         path = self.write(text)
         cfg = config.resolve(config.load(path), RELEASE)          # passes full schema validation
@@ -70,7 +70,7 @@ class WizardTests(Base):
             "2", "vpc-0123456789abcdef0", "subnet-0a1,subnet-0b2", "subnet-0c3,subnet-0d4",
             "2", "10.0.0.0/8, 172.16.0.0/12",
             "2", "CorpIdP", "https://idp.example.org/metadata.xml", "y",
-            "2", "n", "n", "n", SECRET])
+            "2", "n", "n", "n", "n", SECRET])
         cfg = config.resolve(config.load(self.write(wizard.render_config(answers))), RELEASE)
         self.assertEqual(cfg["domain"]["hosts"]["chat"], "h-chat.example.org")
         self.assertEqual(cfg["network"]["subnets"]["private"], ["subnet-0a1", "subnet-0b2"])
@@ -82,24 +82,41 @@ class WizardTests(Base):
         self.assertEqual(config.semantic_errors(cfg), [])
 
     def test_desktop_support_is_a_question_and_defaults_to_no(self):
-        off = self.run_wizard(["acme", "us-east-1", "", "dial.acme.example", "y", CERT, "1", "", "1", "", "1", "1", "y", "", "y", SECRET])
+        off = self.run_wizard(["acme", "us-east-1", "", "dial.acme.example", "y", CERT, "1", "", "1", "", "1", "1", "y", "", "", "y", SECRET])
         cfg = config.resolve(config.load(self.write(wizard.render_config(off))), RELEASE)
         self.assertFalse(cfg["features"]["desktop_app"])
         self.assertNotIn("desktop_app", wizard.render_config(off))
 
     def test_saying_yes_writes_the_flag(self):
-        on = self.run_wizard(["acme", "us-east-1", "", "dial.acme.example", "y", CERT, "1", "", "1", "", "1", "1", "y", "y", "y", SECRET])
+        on = self.run_wizard(["acme", "us-east-1", "", "dial.acme.example", "y", CERT, "1", "", "1", "", "1", "1", "y", "y", "n", "y", SECRET])
         cfg = config.resolve(config.load(self.write(wizard.render_config(on))), RELEASE)
         self.assertTrue(cfg["features"]["desktop_app"])
         self.assertTrue(cfg["features"]["analytics"])
 
     def test_both_features_can_be_changed_together(self):
-        both = self.run_wizard(["acme", "us-east-1", "", "dial.acme.example", "y", CERT, "1", "", "1", "", "1", "1", "n", "y", "y", SECRET])
+        both = self.run_wizard(["acme", "us-east-1", "", "dial.acme.example", "y", CERT, "1", "", "1", "", "1", "1", "n", "y", "n", "y", SECRET])
         cfg = config.resolve(config.load(self.write(wizard.render_config(both))), RELEASE)
         self.assertEqual((cfg["features"]["analytics"], cfg["features"]["desktop_app"]), (False, True))
 
+    def test_a_schedule_is_asked_with_defaults(self):
+        answers = self.run_wizard(["acme", "us-east-1", "", "dial.acme.example", "y", CERT, "1", "", "1", "", "1", "1", "y", "n",
+                                   "y", "", "", "", "", "y", SECRET])
+        cfg = config.resolve(config.load(self.write(wizard.render_config(answers))), RELEASE)
+        self.assertEqual(cfg["power"]["schedule"], {"sleep": "19:30", "wake": "08:40", "days": "SUN-THU", "timezone": "Asia/Jerusalem"})
+
+    def test_a_schedule_can_be_changed_and_bad_times_are_asked_again(self):
+        answers = self.run_wizard(["acme", "us-east-1", "", "dial.acme.example", "y", CERT, "1", "", "1", "", "1", "1", "y", "n",
+                                   "y", "25:00", "20:15", "07:05", "MON-FRI", "UTC", "y", SECRET])
+        cfg = config.resolve(config.load(self.write(wizard.render_config(answers))), RELEASE)
+        self.assertEqual(cfg["power"]["schedule"], {"sleep": "20:15", "wake": "07:05", "days": "MON-FRI", "timezone": "UTC"})
+
+    def test_without_a_schedule_the_control_is_still_created(self):
+        answers = self.run_wizard(["acme", "us-east-1", "", "dial.acme.example", "y", CERT, "1", "", "1", "", "1", "1", "y", "n", "n", "y", SECRET])
+        cfg = config.resolve(config.load(self.write(wizard.render_config(answers))), RELEASE)
+        self.assertEqual(cfg["power"], {"enabled": True})
+
     def test_blank_secret_arn_leaves_a_todo_that_check_refuses(self):
-        answers = self.run_wizard(["acme", "us-east-1", "", "dial.acme.example", "y", CERT, "1", "", "1", "", "1", "1", "y", "n", "y", ""])
+        answers = self.run_wizard(["acme", "us-east-1", "", "dial.acme.example", "y", CERT, "1", "", "1", "", "1", "1", "y", "n", "n", "y", ""])
         path = self.write(wizard.render_config(answers))
         with self.assertRaises(InstallerError) as raised:
             config.load(path)
@@ -107,7 +124,7 @@ class WizardTests(Base):
 
     def test_reasks_on_bad_input(self):
         answers = self.run_wizard(["BAD NAME", "acme", "us-east-1", "", "nodomain", "dial.acme.example", "y", "bad-arn", CERT,
-                                   "1", "", "1", "", "9", "1", "1", "y", "n", "y", SECRET])
+                                   "1", "", "1", "", "9", "1", "1", "y", "n", "n", "y", SECRET])
         self.assertEqual(answers["name"], "acme")
         self.assertEqual(answers["domain"]["base"], "dial.acme.example")
 
@@ -124,7 +141,7 @@ class WizardTests(Base):
     def test_init_never_overwrites_config(self):
         with tempfile.TemporaryDirectory() as directory:
             (Path(directory) / "dial.yaml").write_text("keep me")
-            answers = self.run_wizard(["acme", "us-east-1", "", "dial.acme.example", "y", CERT, "1", "", "1", "", "1", "1", "y", "n", "y", SECRET])
+            answers = self.run_wizard(["acme", "us-east-1", "", "dial.acme.example", "y", CERT, "1", "", "1", "", "1", "1", "y", "n", "n", "y", SECRET])
             with self.assertRaises(InstallerError):
                 wizard.write_outputs(answers, Path(directory), lambda _m: None)
             self.assertEqual((Path(directory) / "dial.yaml").read_text(), "keep me")

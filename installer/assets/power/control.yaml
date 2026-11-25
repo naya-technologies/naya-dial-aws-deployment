@@ -1,0 +1,428 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Sleep / wake control of one DIAL installation (dial-install): two Step Functions state machines, their worker Lambda, lock table and optional schedules'
+
+Parameters:
+  EnvironmentName:
+    Type: String
+  ResourcePrefix:
+    Type: String
+  ArtifactBucketName:
+    Type: String
+  WorkerObjectKey:
+    Type: String
+  StateMachineObjectKey:
+    Type: String
+  ConfigObjectKey:
+    Type: String
+  ConfigHash:
+    Type: String
+  ClusterName:
+    Type: String
+  ClusterArn:
+    Type: String
+  PrivateSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+  SecurityGroupIds:
+    Type: List<AWS::EC2::SecurityGroup::Id>
+  NodegroupArns:
+    Type: CommaDelimitedList
+  RdsClusterArn:
+    Type: String
+  RdsClusterIdentifier:
+    Type: String
+  KubernetesAccessGroup:
+    Type: String
+  LambdaMemoryMb:
+    Type: Number
+    MinValue: 128
+  LambdaTimeoutSeconds:
+    Type: Number
+    MinValue: 10
+    MaxValue: 900
+  LockLeaseSeconds:
+    Type: Number
+    MinValue: 60
+  RetrySeconds:
+    Type: Number
+    MinValue: 5
+  LogRetentionDays:
+    Type: Number
+  ScheduleTimezone:
+    Type: String
+  SleepScheduleExpression:
+    Type: String
+    Default: NONE
+  SleepScheduleState:
+    Type: String
+    AllowedValues: [ENABLED, DISABLED]
+    Default: DISABLED
+  WakeScheduleExpression:
+    Type: String
+    Default: NONE
+  WakeScheduleState:
+    Type: String
+    AllowedValues: [ENABLED, DISABLED]
+    Default: DISABLED
+
+Conditions:
+  HasSleepSchedule: !Not [!Equals [!Ref SleepScheduleExpression, NONE]]
+  HasWakeSchedule: !Not [!Equals [!Ref WakeScheduleExpression, NONE]]
+  HasAnySchedule: !Or
+    - !Condition HasSleepSchedule
+    - !Condition HasWakeSchedule
+
+Resources:
+  StateTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ResourcePrefix}-environment-power-state'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: environment
+          AttributeType: S
+      KeySchema:
+        - AttributeName: environment
+          KeyType: HASH
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: environment
+          Value: !Ref EnvironmentName
+        - Key: component
+          Value: nonprod-sleep-wake
+
+  WorkerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: controller-logs-and-vpc
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt WorkerLogGroup.Arn
+              - Effect: Allow
+                Action:
+                  - ec2:CreateNetworkInterface
+                  - ec2:DescribeNetworkInterfaces
+                  - ec2:DescribeSubnets
+                  - ec2:DeleteNetworkInterface
+                  - ec2:AssignPrivateIpAddresses
+                  - ec2:UnassignPrivateIpAddresses
+                Resource: '*'
+        - PolicyName: controller-state-and-config
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:UpdateItem
+                Resource: !GetAtt StateTable.Arn
+              - Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub 'arn:${AWS::Partition}:s3:::${ArtifactBucketName}/${ConfigObjectKey}'
+        - PolicyName: controller-eks
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - eks:DescribeCluster
+                  - eks:ListNodegroups
+                Resource: !Ref ClusterArn
+              - Effect: Allow
+                Action:
+                  - eks:DescribeNodegroup
+                  - eks:UpdateNodegroupConfig
+                Resource: !Ref NodegroupArns
+              - Effect: Allow
+                Action: autoscaling:DescribeAutoScalingGroups
+                Resource: '*'
+        - PolicyName: controller-rds
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: rds:DescribeDBClusters
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - rds:StartDBCluster
+                  - rds:StopDBCluster
+                Resource: !Ref RdsClusterArn
+
+  WorkerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ResourcePrefix}-sleep-wake-worker'
+      RetentionInDays: !Ref LogRetentionDays
+
+  WorkerFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: WorkerLogGroup
+    Properties:
+      FunctionName: !Sub '${ResourcePrefix}-sleep-wake-worker'
+      Description: !Sub 'Reconciles ${EnvironmentName} to AWAKE or ASLEEP from immutable config ${ConfigHash}'
+      Runtime: python3.12
+      Architectures: [x86_64]
+      Handler: handler.lambda_handler
+      Role: !GetAtt WorkerRole.Arn
+      MemorySize: !Ref LambdaMemoryMb
+      Timeout: !Ref LambdaTimeoutSeconds
+      ReservedConcurrentExecutions: 4
+      Code:
+        S3Bucket: !Ref ArtifactBucketName
+        S3Key: !Ref WorkerObjectKey
+      Environment:
+        Variables:
+          ENVIRONMENT_NAME: !Ref EnvironmentName
+          CONFIG_BUCKET: !Ref ArtifactBucketName
+          CONFIG_KEY: !Ref ConfigObjectKey
+          CONFIG_HASH: !Ref ConfigHash
+          STATE_TABLE_NAME: !Ref StateTable
+          LOCK_LEASE_SECONDS: !Ref LockLeaseSeconds
+          RETRY_SECONDS: !Ref RetrySeconds
+          RDS_CLUSTER_IDENTIFIER: !Ref RdsClusterIdentifier
+      VpcConfig:
+        SubnetIds: !Ref PrivateSubnetIds
+        SecurityGroupIds: !Ref SecurityGroupIds
+      Tags:
+        - Key: environment
+          Value: !Ref EnvironmentName
+        - Key: component
+          Value: nonprod-sleep-wake
+
+  WorkerAccessEntry:
+    Type: AWS::EKS::AccessEntry
+    Properties:
+      ClusterName: !Ref ClusterName
+      PrincipalArn: !GetAtt WorkerRole.Arn
+      KubernetesGroups:
+        - !Ref KubernetesAccessGroup
+      Type: STANDARD
+      Tags:
+        - Key: environment
+          Value: !Ref EnvironmentName
+        - Key: component
+          Value: nonprod-sleep-wake
+
+  StateMachineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: states.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: invoke-controller-worker
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !GetAtt WorkerFunction.Arn
+        - PolicyName: state-machine-log-delivery
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogDelivery
+                  - logs:CreateLogStream
+                  - logs:GetLogDelivery
+                  - logs:UpdateLogDelivery
+                  - logs:DeleteLogDelivery
+                  - logs:ListLogDeliveries
+                  - logs:PutLogEvents
+                  - logs:PutResourcePolicy
+                  - logs:DescribeResourcePolicies
+                  - logs:DescribeLogGroups
+                Resource: '*'
+
+  StateMachineLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/vendedlogs/states/${ResourcePrefix}-sleep-wake'
+      RetentionInDays: !Ref LogRetentionDays
+
+  SleepStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Sub '${ResourcePrefix}-sleep'
+      StateMachineType: STANDARD
+      RoleArn: !GetAtt StateMachineRole.Arn
+      DefinitionS3Location:
+        Bucket: !Ref ArtifactBucketName
+        Key: !Ref StateMachineObjectKey
+      DefinitionSubstitutions:
+        WorkerFunctionArn: !GetAtt WorkerFunction.Arn
+        EnvironmentName: !Ref EnvironmentName
+        DesiredState: ASLEEP
+      LoggingConfiguration:
+        Destinations:
+          - CloudWatchLogsLogGroup:
+              LogGroupArn: !GetAtt StateMachineLogGroup.Arn
+        IncludeExecutionData: false
+        Level: ALL
+      Tags:
+        - Key: environment
+          Value: !Ref EnvironmentName
+        - Key: component
+          Value: nonprod-sleep-wake
+
+  WakeStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Sub '${ResourcePrefix}-wake'
+      StateMachineType: STANDARD
+      RoleArn: !GetAtt StateMachineRole.Arn
+      DefinitionS3Location:
+        Bucket: !Ref ArtifactBucketName
+        Key: !Ref StateMachineObjectKey
+      DefinitionSubstitutions:
+        WorkerFunctionArn: !GetAtt WorkerFunction.Arn
+        EnvironmentName: !Ref EnvironmentName
+        DesiredState: AWAKE
+      LoggingConfiguration:
+        Destinations:
+          - CloudWatchLogsLogGroup:
+              LogGroupArn: !GetAtt StateMachineLogGroup.Arn
+        IncludeExecutionData: false
+        Level: ALL
+      Tags:
+        - Key: environment
+          Value: !Ref EnvironmentName
+        - Key: component
+          Value: nonprod-sleep-wake
+
+  SchedulerDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Condition: HasAnySchedule
+    Properties:
+      QueueName: !Sub '${ResourcePrefix}-sleep-wake-scheduler-dlq'
+      MessageRetentionPeriod: 345600
+      SqsManagedSseEnabled: true
+
+  SchedulerRole:
+    Type: AWS::IAM::Role
+    Condition: HasAnySchedule
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: scheduler.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: start-environment-control
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: states:StartExecution
+                Resource:
+                  - !Ref SleepStateMachine
+                  - !Ref WakeStateMachine
+              - Effect: Allow
+                Action: sqs:SendMessage
+                Resource: !GetAtt SchedulerDeadLetterQueue.Arn
+
+  SchedulerGroup:
+    Type: AWS::Scheduler::ScheduleGroup
+    Condition: HasAnySchedule
+    Properties:
+      Name: !Sub '${ResourcePrefix}-sleep-wake'
+      Tags:
+        - Key: environment
+          Value: !Ref EnvironmentName
+        - Key: component
+          Value: nonprod-sleep-wake
+
+  SleepSchedule:
+    Type: AWS::Scheduler::Schedule
+    Condition: HasSleepSchedule
+    Properties:
+      Name: !Sub '${ResourcePrefix}-sleep'
+      GroupName: !Ref SchedulerGroup
+      Description: !Sub 'Requests ASLEEP for ${EnvironmentName}'
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      ScheduleExpression: !Ref SleepScheduleExpression
+      ScheduleExpressionTimezone: !Ref ScheduleTimezone
+      State: !Ref SleepScheduleState
+      Target:
+        Arn: !Ref SleepStateMachine
+        RoleArn: !GetAtt SchedulerRole.Arn
+        Input: '{"source":"schedule"}'
+        DeadLetterConfig:
+          Arn: !GetAtt SchedulerDeadLetterQueue.Arn
+        RetryPolicy:
+          MaximumEventAgeInSeconds: 3600
+          MaximumRetryAttempts: 2
+
+  WakeSchedule:
+    Type: AWS::Scheduler::Schedule
+    Condition: HasWakeSchedule
+    Properties:
+      Name: !Sub '${ResourcePrefix}-wake'
+      GroupName: !Ref SchedulerGroup
+      Description: !Sub 'Requests AWAKE for ${EnvironmentName}'
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      ScheduleExpression: !Ref WakeScheduleExpression
+      ScheduleExpressionTimezone: !Ref ScheduleTimezone
+      State: !Ref WakeScheduleState
+      Target:
+        Arn: !Ref WakeStateMachine
+        RoleArn: !GetAtt SchedulerRole.Arn
+        Input: '{"source":"schedule"}'
+        DeadLetterConfig:
+          Arn: !GetAtt SchedulerDeadLetterQueue.Arn
+        RetryPolicy:
+          MaximumEventAgeInSeconds: 3600
+          MaximumRetryAttempts: 2
+
+Outputs:
+  ModuleOwnership:
+    Value: dial-install-sleep-wake-control-v1
+  EnvironmentName:
+    Value: !Ref EnvironmentName
+  ResourcePrefix:
+    Value: !Ref ResourcePrefix
+  ClusterArn:
+    Value: !Ref ClusterArn
+  RdsClusterArn:
+    Value: !Ref RdsClusterArn
+  ArtifactBucketName:
+    Value: !Ref ArtifactBucketName
+  WorkerFunctionArn:
+    Value: !GetAtt WorkerFunction.Arn
+  WorkerRoleArn:
+    Value: !GetAtt WorkerRole.Arn
+  SleepStateMachineArn:
+    Value: !Ref SleepStateMachine
+  WakeStateMachineArn:
+    Value: !Ref WakeStateMachine
+  StateTableName:
+    Value: !Ref StateTable
+  ConfigHash:
+    Value: !Ref ConfigHash
+  KubernetesAccessGroup:
+    Value: !Ref KubernetesAccessGroup
+  ConfigRefreshProtocolVersion:
+    Value: '1'

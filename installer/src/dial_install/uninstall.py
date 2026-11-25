@@ -17,7 +17,7 @@ import json
 import time
 from typing import Callable
 
-from . import addons, licenses
+from . import addons, licenses, power
 from .bootstrap import Bootstrap
 from .context import Context
 from .errors import CommandError
@@ -95,6 +95,7 @@ class Uninstaller:
                  f"Private DNS zone {self.namespace}.knative.{self.ctx.name}.internal"]
         lines += [f"CloudFormation stack {addons.node_stack(self.ctx, name)} (add-on {name})" for name in self.addon_node_groups()]
         lines += [f"CloudFormation stack {name} ({slot})" for slot, name in stacks.items()]
+        lines += [f"Sleep / wake control (stacks {power.control_stack(self.ctx)} and {power.artifacts_stack(self.ctx)}) if it exists"]
         if not self.keep_images:
             lines.append(f"{len(self.repositories())} mirrored product image repositories in your ECR")
         if not self.keep_secret:
@@ -112,8 +113,10 @@ class Uninstaller:
         if network:
             self.vpc_id = self._outputs(network).get("VPCId")
         self.report_license()
+        self.database_awake(stacks.get("database"))
         self.cluster_workloads()
         self.addon_stacks()
+        self.sleep_wake_control()
         self.private_zone()
         self.database_protection(stacks.get("database"))
         self.delete_stacks(stacks)
@@ -199,6 +202,36 @@ class Uninstaller:
         """Node groups of add-ons: they belong to the cluster, so they go before the stacks they depend on."""
         for name in self.addon_node_groups():
             addons.delete_node_group(self.ctx, name, self.say)
+
+    def database_awake(self, stack: str | None) -> None:
+        """An installation put to sleep has a stopped database; it can be neither changed nor deleted until it runs again."""
+        if not stack:
+            return
+        for cluster in self._resources(stack, "AWS::RDS::DBCluster"):
+            data = self.cloud.aws_json("rds", "describe-db-clusters", "--db-cluster-identifier", cluster, check=False) or {}
+            status = (data.get("DBClusters") or [{}])[0].get("Status")
+            if status in ("stopped", "stopping"):
+                self.say(f"  Starting the database {cluster} (the installation was asleep); this takes a few minutes")
+                if status == "stopping" and not self.dry_run:
+                    self.cloud.aws("rds", "wait", "db-cluster-stopped", "--db-cluster-identifier", cluster, check=False)
+                self.cloud.aws("rds", "start-db-cluster", "--db-cluster-identifier", cluster, write=True, check=False)
+                if not self.dry_run:
+                    self.cloud.aws("rds", "wait", "db-cluster-available", "--db-cluster-identifier", cluster, check=False)
+
+    def sleep_wake_control(self) -> None:
+        """The sleep / wake control: its stack (the worker's access entry belongs to the cluster), then its artifact bucket."""
+        for stack in (power.control_stack(self.ctx), power.artifacts_stack(self.ctx)):
+            data = self.cloud.aws_json("cloudformation", "describe-stacks", "--stack-name", stack, check=False)
+            if not data or not data.get("Stacks"):
+                continue
+            if "dial-install:component" not in {t["Key"] for t in data["Stacks"][0].get("Tags", [])}:
+                continue                                  # not created by dial-install
+            if stack == power.artifacts_stack(self.ctx):
+                for bucket in self._resources(stack, "AWS::S3::Bucket"):
+                    self._empty_bucket(bucket)
+            self.say(f"  Deleting stack {stack}")
+            self.cloud.aws("cloudformation", "delete-stack", "--stack-name", stack, write=True, check=False)
+            self._wait_deleted(stack)
 
     def private_zone(self) -> None:
         zone_name = f"{self.namespace}.knative.{self.ctx.name}.internal"
@@ -323,6 +356,10 @@ class Uninstaller:
         left += [f"database {c['DBClusterIdentifier']}" for c in clusters.get("DBClusters", [])
                  if c["DBClusterIdentifier"].startswith(f"{self.ctx.name}-")]
         left += [f"node group stack {addons.node_stack(self.ctx, n)}" for n in self.addon_node_groups()]
+        for stack in (power.control_stack(self.ctx), power.artifacts_stack(self.ctx)):
+            data = self.cloud.aws_json("cloudformation", "describe-stacks", "--stack-name", stack, check=False)
+            if data and data.get("Stacks"):
+                left.append(f"stack {stack}")
         left += [f"image repository {r}" for r in ([] if self.keep_images else self.repositories())]
         if not self.keep_secret:
             secrets = self.cloud.aws_json("secretsmanager", "list-secrets", "--include-planned-deletion", check=False) or {}

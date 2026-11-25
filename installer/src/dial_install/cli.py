@@ -109,6 +109,13 @@ def _parser() -> argparse.ArgumentParser:
         if action == "remove":
             one.add_argument("--keep-images", action="store_true", help="keep the add-on's images in your ECR")
 
+    for action, text in (("sleep", "put the installation to sleep: nodes and database stop (state machine <name>-sleep)"),
+                         ("wake", "wake the installation up (state machine <name>-wake)")):
+        power_cmd = sub.add_parser(action, help=text)
+        common(power_cmd)
+        power_cmd.add_argument("-y", "--yes", action="store_true", help="do not ask for confirmation")
+        power_cmd.add_argument("--dry-run", action="store_true", help="print the commands instead of running them")
+
     sub.add_parser("releases", help="list the DIAL releases included in this package")
     verify = sub.add_parser("verify-release", help="check that every image of a release exists in the Marketplace registry")
     common(verify)
@@ -186,6 +193,8 @@ def _dispatch(args: argparse.Namespace) -> int:
             action = {"list": workflow.cmd_addons_list, "install": workflow.cmd_addons_install,
                       "upgrade": workflow.cmd_addons_upgrade, "remove": workflow.cmd_addons_remove}[args.addon_action]
             return action(options, runner, print)
+        if args.command in ("sleep", "wake"):
+            return workflow.cmd_power(options, runner, print, args.command)
         if args.command == "grant-access":
             return workflow.cmd_grant_access(options, runner, print, args.principal_arn)
         return commands[args.command](options, runner, print)

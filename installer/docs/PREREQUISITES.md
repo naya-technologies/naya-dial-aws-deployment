@@ -50,6 +50,11 @@ For the Bedrock Guardrail interceptor (`bedrock-guardrail`): a published Amazon 
 (the installer checks it), and permission to create an IAM role through CloudFormation (`iam:CreateRole`, `iam:PutRolePolicy`, `iam:DeleteRole`,
 `iam:DeleteRolePolicy`, `iam:GetRole`).
 
+## Sleep / wake
+
+Created with every installation: your user needs to create Lambda functions, Step Functions state machines, a DynamoDB table, S3 buckets,
+EventBridge Scheduler schedules, SQS queues, IAM roles and an EKS access entry through CloudFormation (`AdministratorAccess` while you install covers it).
+
 ## Database sign-in with the IAM role (optional)
 
 With `database.auth: iam` the installer creates the PostgreSQL role for DIAL Admin through a short Job inside the cluster

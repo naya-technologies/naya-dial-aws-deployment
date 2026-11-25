@@ -33,6 +33,10 @@ Always start with `./dial-install check`. It reports most problems in plain lang
 | `Guardrail <id> version <n> was not found` | Wrong `--guardrail-id`, `--guardrail-version` or `--bedrock-region`, or your user lacks `bedrock:GetGuardrail`. Nothing was installed. |
 | `The guardrail version DRAFT is refused` | Publish a numbered version in the Bedrock console, or add `--allow-draft` (testing only). |
 | `The Bedrock Guardrail interceptor check failed` | The message says what it means. In short: 404 on `POST /?api-version` = Core calls it without a path (run `add-ons upgrade bedrock-guardrail`); `NoCredentialsError` = its service account has no role or the pod started before it (run `add-ons upgrade`, it restarts it); `AccessDeniedException` = the role may not use this guardrail, or the guardrail is in another account or region; `NoRegionError` = `BEDROCK_REGION` missing; `ResourceNotFoundException` / `ValidationException` = wrong guardrail id or version. Chat says "The safety check is temporarily unavailable": see `kubectl logs deployment/dial-bedrock-guardrail`. Answers arriving all at once is normal while it is attached. |
+| `The installation is asleep` | `./dial-install wake`, then run the command again. |
+| `The sleep / wake control was not updated` | The worker needs a stable, awake environment to accept a new configuration; the message lists what blocked it (for example a node group still scaling, a pod not ready, Aurora not available). Run the same command again later. |
+| A sleep execution fails with `unmanaged-pod` or `unmanaged-node` | Something runs that the installation does not know (added by hand). Remove it, or run `./dial-install apply` so the configuration includes it, then sleep again. |
+| A wake execution does not finish | Every public address must answer through the load balancer: create the DNS records (`./dial-install status`). See the execution in Step Functions and the log `/aws/lambda/<name>-sleep-wake-worker`. |
 | Browser shows a certificate or DNS error | The DNS records from `status` are missing or have not propagated yet (can take 30 minutes). |
 
 Useful commands:

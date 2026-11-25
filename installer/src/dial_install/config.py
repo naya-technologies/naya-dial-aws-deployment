@@ -133,6 +133,12 @@ def resolve(raw: dict, release: dict) -> dict:
     # Container Insights puts a webhook on the control plane's path to the pods, which an overlay network cannot reach.
     features.setdefault("container_logs", kube["cni"] != "cilium")
 
+    power = cfg.setdefault("power", {})
+    power.setdefault("enabled", True)
+    if power.get("schedule"):
+        power["schedule"].setdefault("days", "SUN-THU")
+        power["schedule"].setdefault("timezone", "Asia/Jerusalem")
+
     cfg["release"] = release["release"]
 
     overrides = cfg.setdefault("sizing", {}).get("node_groups", {})

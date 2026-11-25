@@ -14,6 +14,7 @@ Install and upgrade DIAL on AWS from one configuration file.
 ./dial-install grant-access <iam-arn>   # give another admin access to the cluster
 ./dial-install uninstall       # remove everything this installation created (alias: remove)
 ./dial-install add-ons list    # optional add-ons (install | upgrade | remove)
+./dial-install sleep           # stop nodes and database now (./dial-install wake starts them again)
 ./dial-install releases        # list the DIAL releases in this package
 ./dial-install verify-release  # vendor: every image of a release exists in the Marketplace registry
 ```
@@ -42,6 +43,7 @@ Every command that reads `dial.yaml` accepts the same options:
 | `grant-access <arn>` | Gives an IAM user or role cluster-admin through an EKS access entry. | EKS only | common |
 | `uninstall` (alias `remove`) | Removes everything this installation created, in an order that cannot get stuck, and checks at the end that nothing is left. Asks you to type the installation name. Details: [docs/UNINSTALL.md](docs/UNINSTALL.md). | **Deletes** | `-y/--yes`, `--dry-run`, `--keep-images` keep the mirrored images, `--keep-secret`, `--keep-snapshot` keep the final database snapshot |
 | `add-ons` (alias `addons`) | `list`, `install <id>`, `upgrade <id>`, `remove <id>`: optional products (AI Brain, ...) from Naya's registry, installed next to the platform. Details: [docs/ADDONS.md](docs/ADDONS.md). | `install`, `upgrade`, `remove` change the cluster and your ECR | `-y/--yes`, `--dry-run`; `install`/`upgrade`: `--version <tag>` (default: the newest), `--model <id>`, `--instance-type <type>`, `--nodes <n>`, `--no-dedicated-nodes` (settings of add-ons that have them); `remove`: `--keep-images` |
+| `sleep`, `wake` | Starts the state machine `<name>-sleep` or `<name>-wake` and waits: nodes and database stop or start. Details: [docs/SLEEP_WAKE.md](docs/SLEEP_WAKE.md). | Yes (stops / starts) | `-y/--yes`, `--dry-run` |
 | `releases` | Lists the releases in this package. | No | none |
 | `verify-release` | Vendor: checks that every image of a release exists in the Marketplace registry. | No | common (`--chart <dir>`: check a local chart before publishing) |
 
@@ -63,6 +65,7 @@ No `pip install`, no repository clone: unpack the package and run it. The `-offl
 | Understand or publish a release | [releases/README.md](releases/README.md) |
 | Fix a problem | [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) |
 | Install an optional add-on | [docs/ADDONS.md](docs/ADDONS.md) |
+| Sleep at night, wake in the morning | [docs/SLEEP_WAKE.md](docs/SLEEP_WAKE.md) |
 | Remove an installation | [docs/UNINSTALL.md](docs/UNINSTALL.md) |
 | Install an optional add-on (AI Brain, AI RAG, ...) | [docs/ADDONS.md](docs/ADDONS.md) |
 | Maintain or extend the installer | [docs/DEVELOPING.md](docs/DEVELOPING.md) |
@@ -77,6 +80,7 @@ No `pip install`, no repository clone: unpack the package and run it. The `-offl
 | Cluster | `compute/eks` | EKS, four managed node groups, IAM roles for service accounts |
 | Sign-in | `identity/cognito` | Cognito users, or SAML federated through Cognito |
 | Add-ons (optional) | `./dial-install add-ons`, catalog in [addons/](addons/) | Products from Naya's registry, each its own Helm release; see [docs/ADDONS.md](docs/ADDONS.md) |
+| Sleep / wake | `<name>-sleep-wake` stacks, end of `apply` | Two Step Functions state machines, their Lambda and optional schedules; see [docs/SLEEP_WAKE.md](docs/SLEEP_WAKE.md) |
 | Cluster prerequisites | Helm chart `dial-cluster-base` (inside this package) | Namespace, storage class, permissions, CRDs |
 | Images | `registry/ecr-mirror` | Copies the product images from the Marketplace registry into your private ECR |
 | Platform | Helm chart `naya-helm-deployment` from the AWS Marketplace registry | The DIAL umbrella chart; sources in [../charts](../charts/README.md) |

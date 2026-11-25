@@ -14,7 +14,8 @@ ACCEPTED_WARNINGS = {"W2001", "W3005"}
 class LintTests(Base):
     def test_templates_have_no_lint_errors_or_new_warnings(self):
         problems = []
-        for template in [*sorted((ROOT / "modules").glob("*/*/stack.yaml")), *sorted((ROOT / "addons" / "stacks").glob("*.yaml"))]:
+        for template in [*sorted((ROOT / "modules").glob("*/*/stack.yaml")), *sorted((ROOT / "addons" / "stacks").glob("*.yaml")),
+                         ROOT / "assets" / "power" / "control.yaml", ROOT / "assets" / "power" / "artifacts.yaml"]:
             result = subprocess.run(["cfn-lint", str(template), "--regions", "us-east-1"], capture_output=True, text=True)
             for line in result.stdout.splitlines():
                 code = line.split(" ", 1)[0]

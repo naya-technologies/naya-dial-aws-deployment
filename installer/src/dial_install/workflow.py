@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from . import __version__, adapters, addons, checks, desktop, licenses, cilium as cilium_mod, config, deploy, infra, mirror, modules as modules_mod, releases, uninstall as uninstall_mod
+from . import __version__, adapters, addons, checks, desktop, power, licenses, cilium as cilium_mod, config, deploy, infra, mirror, modules as modules_mod, releases, uninstall as uninstall_mod
 from .bootstrap import Bootstrap
 from .cloud import Cloud
 from .context import Context
@@ -220,6 +220,7 @@ def cmd_apply(options: Options, runner: Runner, say: Say, ask: Callable[[str], s
         say("Cancelled. Nothing was changed.")
         return 0
 
+    power.require_awake(ctx)                        # an installation put to sleep has no nodes: wake it first
     say("\n[1/2] Infrastructure")
     infra.deploy(ctx, modules, say)
 
@@ -269,6 +270,7 @@ def _verify_and_report(ctx: Context, say: Say, *, first_install: bool = False) -
     _print_dns(ctx, say)
     if first_install:
         _print_first_user(ctx, say)
+    power.deploy(ctx, say)
     _deliver_desktop_file(ctx, say)
 
 
@@ -349,6 +351,7 @@ def cmd_upgrade(options: Options, runner: Runner, say: Say, ask: Callable[[str],
         infra.load_outputs(ctx, modules)
 
     ctx.cloud.aws("eks", "update-kubeconfig", "--name", ctx.cluster_name, "--alias", ctx.cloud.kube_context, write=True)
+    power.require_awake(ctx)
     current = deploy.installed(ctx)
     if current is None and not runner.dry_run:
         raise InstallerError("DIAL is not installed in this cluster yet.", "Run `./dial-install apply` first.")
@@ -456,6 +459,7 @@ def _addon_context(options: Options, runner: Runner, say: Say) -> Context | None
         return None
     infra.load_outputs(ctx, modules)
     ctx.cloud.aws("eks", "update-kubeconfig", "--name", ctx.cluster_name, "--alias", ctx.cloud.kube_context, write=True)
+    power.require_awake(ctx)
     return ctx
 
 
@@ -491,6 +495,7 @@ def cmd_addons_install(options: Options, runner: Runner, say: Say, ask: Callable
         say("Cancelled. Nothing was changed.")
         return 0
     addons.install(ctx, options.addon, say, options.addon_settings)
+    power.refresh_if_installed(ctx, say)              # the sleep / wake configuration must know the add-on's nodes and workloads
     return 0
 
 
@@ -509,7 +514,8 @@ def cmd_addons_upgrade(options: Options, runner: Runner, say: Say, ask: Callable
     if not _confirm(options, say, f"Upgrade {entry['display_name']} {state['version'] if state else '?'} -> {entry['version']}?", ask):
         say("Cancelled. Nothing was changed.")
         return 0
-    addons.upgrade(ctx, options.addon, say, options.addon_settings)
+    if addons.upgrade(ctx, options.addon, say, options.addon_settings):
+        power.refresh_if_installed(ctx, say)
     return 0
 
 
@@ -526,8 +532,23 @@ def cmd_addons_remove(options: Options, runner: Runner, say: Say, ask: Callable[
             say("Cancelled. Nothing was changed.")
             return 0
     left = addons.remove(ctx, options.addon, say, keep_images=options.keep_images)
+    power.refresh_if_installed(ctx, say)
     if left:
         say("\nSome things are still there; run the command again: " + "; ".join(left))
         return 1
     say(f"\n{entry['display_name']} is removed. Nothing of it is left." if not runner.dry_run else "\nDry run: nothing was changed.")
+    return 0
+
+
+# ---- sleep / wake ----------------------------------------------------------------------------------------------------------
+def cmd_power(options: Options, runner: Runner, say: Say, action: str, ask: Callable[[str], str] = input) -> int:
+    """Start the state machine <name>-sleep or <name>-wake and wait until it has finished."""
+    ctx, modules = build_context(options, runner)
+    infra.load_outputs(ctx, modules)
+    question = ("Put the installation to sleep? Its nodes and database stop and DIAL is unavailable until `./dial-install wake`."
+                if action == "sleep" else "Wake the installation up?")
+    if not _confirm(options, say, question, ask):
+        say("Cancelled. Nothing was changed.")
+        return 0
+    power.run(ctx, action, say)
     return 0

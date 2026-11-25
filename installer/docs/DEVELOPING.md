@@ -24,13 +24,14 @@ src/dial_install/
   modules.py            discover + select + order modules
   infra.py              one CloudFormation stack per module, outputs
   bootstrap.py          cluster add-ons (autoscaler, storage class, CRDs, Knative, Istio, private DNS)
+  power.py              sleep / wake control: stacks, environment configuration, worker refresh protocol, sleep/wake commands
   addons.py             add-ons: catalog, install / upgrade / remove, registration in Core
   deploy.py             Helm install/upgrade, diff, readiness, license, DNS records
   values/               placeholder substitution: chart defaults + PLACEHOLDER_* -> values file
   charts.py             locate the packaged cluster-base chart
   checks.py secrets.py wizard.py tools.py runner.py cloud.py ...
 modules/<slot>/<provider>/   module.yaml, stack.yaml, module.py
-assets/                 static files (autoscaler values)
+assets/                 static files (autoscaler values; power/: the sleep / wake worker, state machine definition and templates)
 vendor/yaml/            pure-python PyYAML so customers need no pip
 tests/                  no AWS access needed
 ```

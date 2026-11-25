@@ -1,0 +1,520 @@
+{
+  "Comment": "Idempotently reconcile one fixed environment to AWAKE or ASLEEP",
+  "StartAt": "Capture command",
+  "TimeoutSeconds": 4020,
+  "States": {
+    "Capture command": {
+      "Type": "Pass",
+      "Parameters": {
+        "commandInput.$": "$"
+      },
+      "Next": "Accept command"
+    },
+    "Accept command": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${WorkerFunctionArn}",
+        "Payload": {
+          "operation": "command",
+          "environment": "${EnvironmentName}",
+          "desiredState": "${DesiredState}",
+          "executionArn.$": "$$.Execution.Id",
+          "executionStartedAt.$": "$$.Execution.StartTime",
+          "input.$": "$.commandInput"
+        }
+      },
+      "ResultSelector": {
+        "payload.$": "$.Payload"
+      },
+      "ResultPath": "$.controller",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 4,
+          "BackoffRate": 2
+        },
+        {
+          "ErrorEquals": [
+            "RetryableControllerError"
+          ],
+          "IntervalSeconds": 5,
+          "MaxAttempts": 60,
+          "BackoffRate": 1
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.failure",
+          "Next": "Finalize failure"
+        }
+      ],
+      "Next": "Command outcome"
+    },
+    "Command outcome": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.controller.payload.status",
+          "StringEquals": "OWNER",
+          "Next": "Reconcile"
+        },
+        {
+          "Variable": "$.controller.payload.status",
+          "StringEquals": "JOINED",
+          "Next": "Wait for owner"
+        },
+        {
+          "Variable": "$.controller.payload.status",
+          "StringEquals": "SKIPPED",
+          "Next": "Command skipped"
+        },
+        {
+          "Variable": "$.controller.payload.status",
+          "StringEquals": "SUPERSEDED",
+          "Next": "Command superseded"
+        },
+        {
+          "Variable": "$.controller.payload.status",
+          "StringEquals": "REFRESHING",
+          "Next": "Wait for config refresh"
+        }
+      ],
+      "Default": "Unexpected worker result"
+    },
+    "Wait for config refresh": {
+      "Type": "Wait",
+      "SecondsPath": "$.controller.payload.waitSeconds",
+      "Next": "Accept command"
+    },
+    "Wait for owner": {
+      "Type": "Wait",
+      "SecondsPath": "$.controller.payload.waitSeconds",
+      "Next": "Acquire lock"
+    },
+    "Acquire lock": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${WorkerFunctionArn}",
+        "Payload": {
+          "operation": "acquire",
+          "environment": "${EnvironmentName}",
+          "executionArn.$": "$$.Execution.Id"
+        }
+      },
+      "ResultSelector": {
+        "payload.$": "$.Payload"
+      },
+      "ResultPath": "$.controller",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 4,
+          "BackoffRate": 2
+        },
+        {
+          "ErrorEquals": [
+            "RetryableControllerError"
+          ],
+          "IntervalSeconds": 5,
+          "MaxAttempts": 60,
+          "BackoffRate": 1
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.failure",
+          "Next": "Wait after acquire failure"
+        }
+      ],
+      "Next": "Acquire outcome"
+    },
+    "Acquire outcome": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.controller.payload.status",
+          "StringEquals": "OWNER",
+          "Next": "Reconcile"
+        },
+        {
+          "Variable": "$.controller.payload.status",
+          "StringEquals": "JOINED",
+          "Next": "Wait for owner"
+        }
+      ],
+      "Default": "Unexpected worker result"
+    },
+    "Wait after acquire failure": {
+      "Type": "Wait",
+      "Seconds": 30,
+      "Next": "Acquire lock"
+    },
+    "Reconcile": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${WorkerFunctionArn}",
+        "Payload": {
+          "operation": "reconcile",
+          "environment": "${EnvironmentName}",
+          "executionArn.$": "$$.Execution.Id"
+        }
+      },
+      "ResultSelector": {
+        "payload.$": "$.Payload"
+      },
+      "ResultPath": "$.controller",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 4,
+          "BackoffRate": 2
+        },
+        {
+          "ErrorEquals": [
+            "RetryableControllerError"
+          ],
+          "IntervalSeconds": 5,
+          "MaxAttempts": 60,
+          "BackoffRate": 1
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.failure",
+          "Next": "Finalize failure"
+        }
+      ],
+      "Next": "Reconcile outcome"
+    },
+    "Reconcile outcome": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.controller.payload.status",
+          "StringEquals": "RETRY",
+          "Next": "Wait before retry"
+        },
+        {
+          "Variable": "$.controller.payload.status",
+          "StringEquals": "SUCCEEDED",
+          "Next": "Release successful lock"
+        },
+        {
+          "Variable": "$.controller.payload.status",
+          "StringEquals": "BLOCKED",
+          "Next": "Release blocked lock"
+        },
+        {
+          "Variable": "$.controller.payload.status",
+          "StringEquals": "FAILED",
+          "Next": "Release failed lock"
+        }
+      ],
+      "Default": "Unexpected worker result"
+    },
+    "Wait before retry": {
+      "Type": "Wait",
+      "SecondsPath": "$.controller.payload.waitSeconds",
+      "Next": "Reconcile"
+    },
+    "Release successful lock": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${WorkerFunctionArn}",
+        "Payload": {
+          "operation": "release",
+          "environment": "${EnvironmentName}",
+          "executionArn.$": "$$.Execution.Id",
+          "outcome": "SUCCEEDED"
+        }
+      },
+      "ResultSelector": {
+        "payload.$": "$.Payload"
+      },
+      "ResultPath": "$.release",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 4,
+          "BackoffRate": 2
+        },
+        {
+          "ErrorEquals": [
+            "RetryableControllerError"
+          ],
+          "IntervalSeconds": 5,
+          "MaxAttempts": 60,
+          "BackoffRate": 1
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.failure",
+          "Next": "Finalize failure"
+        }
+      ],
+      "Next": "Successful release outcome"
+    },
+    "Release blocked lock": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${WorkerFunctionArn}",
+        "Payload": {
+          "operation": "release",
+          "environment": "${EnvironmentName}",
+          "executionArn.$": "$$.Execution.Id",
+          "outcome": "BLOCKED"
+        }
+      },
+      "ResultSelector": {
+        "payload.$": "$.Payload"
+      },
+      "ResultPath": "$.release",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 4,
+          "BackoffRate": 2
+        },
+        {
+          "ErrorEquals": [
+            "RetryableControllerError"
+          ],
+          "IntervalSeconds": 5,
+          "MaxAttempts": 60,
+          "BackoffRate": 1
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.failure",
+          "Next": "Finalize failure"
+        }
+      ],
+      "Next": "Blocked release outcome"
+    },
+    "Release failed lock": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${WorkerFunctionArn}",
+        "Payload": {
+          "operation": "release",
+          "environment": "${EnvironmentName}",
+          "executionArn.$": "$$.Execution.Id",
+          "outcome": "FAILED"
+        }
+      },
+      "ResultSelector": {
+        "payload.$": "$.Payload"
+      },
+      "ResultPath": "$.release",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 4,
+          "BackoffRate": 2
+        },
+        {
+          "ErrorEquals": [
+            "RetryableControllerError"
+          ],
+          "IntervalSeconds": 5,
+          "MaxAttempts": 60,
+          "BackoffRate": 1
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.failure",
+          "Next": "Finalize failure"
+        }
+      ],
+      "Next": "Failed release outcome"
+    },
+    "Successful release outcome": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.release.payload.status",
+          "StringEquals": "RETRY",
+          "Next": "Wait after changed desired state"
+        },
+        {
+          "Variable": "$.release.payload.status",
+          "StringEquals": "SUCCEEDED",
+          "Next": "Environment reconciled"
+        }
+      ],
+      "Default": "Unexpected worker result"
+    },
+    "Blocked release outcome": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.release.payload.status",
+          "StringEquals": "RETRY",
+          "Next": "Wait after changed desired state"
+        },
+        {
+          "Variable": "$.release.payload.status",
+          "StringEquals": "SUCCEEDED",
+          "Next": "Environment blocked"
+        }
+      ],
+      "Default": "Unexpected worker result"
+    },
+    "Failed release outcome": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.release.payload.status",
+          "StringEquals": "RETRY",
+          "Next": "Wait after changed desired state"
+        },
+        {
+          "Variable": "$.release.payload.status",
+          "StringEquals": "SUCCEEDED",
+          "Next": "Environment failed"
+        }
+      ],
+      "Default": "Unexpected worker result"
+    },
+    "Wait after changed desired state": {
+      "Type": "Wait",
+      "Seconds": 1,
+      "Next": "Reconcile"
+    },
+    "Finalize failure": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${WorkerFunctionArn}",
+        "Payload": {
+          "operation": "finalizeFailure",
+          "environment": "${EnvironmentName}",
+          "executionArn.$": "$$.Execution.Id",
+          "error.$": "$.failure"
+        }
+      },
+      "ResultSelector": {
+        "payload.$": "$.Payload"
+      },
+      "ResultPath": "$.finalize",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "RetryableControllerError"
+          ],
+          "IntervalSeconds": 5,
+          "MaxAttempts": 60,
+          "BackoffRate": 1
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.finalizeFailure",
+          "Next": "Environment failed"
+        }
+      ],
+      "Next": "Finalize outcome"
+    },
+    "Finalize outcome": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.finalize.payload.status",
+          "StringEquals": "RETRY",
+          "Next": "Reconcile"
+        }
+      ],
+      "Default": "Environment failed"
+    },
+    "Command skipped": {
+      "Type": "Succeed"
+    },
+    "Command superseded": {
+      "Type": "Succeed"
+    },
+    "Environment reconciled": {
+      "Type": "Succeed"
+    },
+    "Environment blocked": {
+      "Type": "Fail",
+      "Error": "EnvironmentSleepBlocked",
+      "Cause": "A runtime safety check blocked the transition"
+    },
+    "Environment failed": {
+      "Type": "Fail",
+      "Error": "EnvironmentReconciliationFailed",
+      "Cause": "The environment did not reach its requested state"
+    },
+    "Unexpected worker result": {
+      "Type": "Fail",
+      "Error": "UnexpectedWorkerResult",
+      "Cause": "The worker returned an unsupported status"
+    }
+  }
+}

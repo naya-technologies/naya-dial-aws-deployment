@@ -24,8 +24,20 @@ def stack_outputs(argv):
     return Result(0, json.dumps({"Stacks": [{"StackStatus": "CREATE_COMPLETE", "Outputs": outputs, "Tags": tags}]}))
 
 
+NODE_GROUPS = ("acme-cluster-core", "acme-cluster-dynamic", "acme-cluster-system")
+
+
+def describe_nodegroup(argv):
+    name = argv[argv.index("--nodegroup-name") + 1]
+    return ok_json({"nodegroup": {"nodegroupName": name, "status": "ACTIVE",
+                                  "nodegroupArn": f"arn:aws:eks:us-east-1:123456789012:nodegroup/acme-cluster/{name}/x",
+                                  "scalingConfig": {"minSize": 1, "maxSize": 3, "desiredSize": 1}}})
+
+
 def aws_fakes(secret_doc=None, deployed=True):
     answers = {
+        ("aws", "eks", "list-nodegroups"): ok_json({"nodegroups": list(NODE_GROUPS)}),
+        ("aws", "eks", "describe-nodegroup"): describe_nodegroup,
         ("aws", "sts", "get-caller-identity"): ok_json({"Account": "123456789012", "Arn": "arn:aws:iam::123456789012:user/me"}),
         ("aws", "secretsmanager", "get-secret-value"): Result(0, json.dumps(secret_doc or secrets.generate())),
         ("aws", "acm", "describe-certificate"): ok_json({"Certificate": {"Status": "ISSUED", "SubjectAlternativeNames": CERT_NAMES}}),
@@ -325,7 +337,8 @@ class UpgradeTests(Base):
         self.assertIn(RELEASE["chart"]["version"], say.text)
         self.assertIn("helm rollback dial 3 --namespace dial --kube-context dial-acme", say.text)
         self.assertTrue(any(a[:2] == ["helm", "upgrade"] for a in runner.writes))
-        self.assertFalse(any("cloudformation" in a for a in runner.writes), "upgrade must not touch infrastructure by default")
+        infrastructure = [a for a in runner.writes if "cloudformation" in a and "dial-install:component=sleep-wake" not in a]
+        self.assertFalse(infrastructure, "upgrade must not touch infrastructure by default (only the sleep / wake control is refreshed)")
 
     def rendered_live_values(self, secret_doc, mutate=None):
         """What Helm would report for a release installed from exactly this config and secret."""
@@ -416,7 +429,7 @@ class UpgradeTests(Base):
             self.assertIn("--with-infra", raised.exception.hint)
             self.assertEqual([w for w in runner.writes if w[0] == "helm"], [])
             _, _, runner = self.run_upgrade("naya-helm-deployment-2026.8.1-old", with_infra=True)
-            stacks = [w for w in runner.writes if w[:3] == ["aws", "cloudformation", "deploy"]]
+            stacks = [w for w in runner.writes if w[:3] == ["aws", "cloudformation", "deploy"] and "dial-install:component=sleep-wake" not in w]
             self.assertTrue(all(f"dial-install:infra-revision={RELEASE['infra_revision']}" in w for w in stacks))
         finally:
             me.INFRA_REVISION["value"] = RELEASE["infra_revision"]
