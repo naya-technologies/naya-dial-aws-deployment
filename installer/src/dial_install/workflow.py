@@ -91,6 +91,7 @@ def collect_findings(ctx: Context, modules: list[Module], *, with_chart: bool = 
     findings += checks.secret_findings(ctx)
     findings += checks.certificate_findings(ctx)
     findings += checks.license_findings(ctx)
+    findings += power.findings(ctx)
     chart = checks.chart_findings(ctx) if with_chart else []
     findings += chart
     for module in modules:

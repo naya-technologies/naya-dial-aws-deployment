@@ -56,7 +56,17 @@ to the worker with its own refresh protocol, which checks the new configuration 
 In the cluster the worker may: read and cordon nodes, read workloads, delete pods when it empties a node, scale the Cluster Autoscaler and
 Knative, read the istiod endpoints (RBAC bound to the group `<name>-sleep-wake-controller`).
 
-Networks without internet access: the VPC endpoints the installer creates include DynamoDB, RDS and Auto Scaling for the worker.
+### Where the worker runs (every kind of network)
+
+One worker, two ways to run it, chosen by `power.lambda_network` (default `auto`):
+
+| Mode | When `auto` picks it | What it needs | Wake checks the public addresses |
+|---|---|---|---|
+| `vpc` (preferred) | The private subnets can reach AWS: the network created by the installer (NAT), `network.create_vpc_endpoints: true` (the installer adds endpoints for DynamoDB, RDS, Auto Scaling, EKS, S3), or an existing VPC with a default route or with its own endpoints for those services | Nothing more; works with a private cluster API (`kubernetes.public_endpoint: false`) and an internal load balancer | Yes, through the load balancer |
+| `public` | Only when the VPC cannot reach AWS and the cluster API is public | `kubernetes.public_endpoint: true` | Only with an internet-facing load balancer open to everyone; otherwise only the workloads in the cluster are checked |
+
+`./dial-install check` says which mode will be used and why, and fails when neither can work (a private cluster API in a VPC without a
+way to AWS): then set `network.create_vpc_endpoints: true` or give the private subnets a route to NAT.
 
 ## Removal
 

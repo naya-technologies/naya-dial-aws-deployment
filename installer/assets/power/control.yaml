@@ -20,10 +20,18 @@ Parameters:
     Type: String
   ClusterArn:
     Type: String
+  LambdaNetworkMode:
+    Type: String
+    Description: 'vpc: the worker runs in the private subnets (reaches the cluster, the load balancer and AWS through NAT or VPC endpoints); public: it runs outside the VPC (needs the public EKS endpoint; cannot reach an internal load balancer)'
+    AllowedValues:
+      - vpc
+      - public
   PrivateSubnetIds:
-    Type: List<AWS::EC2::Subnet::Id>
+    Type: CommaDelimitedList
+    Description: Used only with LambdaNetworkMode vpc (always passed)
   SecurityGroupIds:
-    Type: List<AWS::EC2::SecurityGroup::Id>
+    Type: CommaDelimitedList
+    Description: Used only with LambdaNetworkMode vpc (always passed)
   NodegroupArns:
     Type: CommaDelimitedList
   RdsClusterArn:
@@ -65,6 +73,7 @@ Parameters:
     Default: DISABLED
 
 Conditions:
+  AttachToVpc: !Equals [!Ref LambdaNetworkMode, vpc]
   HasSleepSchedule: !Not [!Equals [!Ref SleepScheduleExpression, NONE]]
   HasWakeSchedule: !Not [!Equals [!Ref WakeScheduleExpression, NONE]]
   HasAnySchedule: !Or
@@ -111,15 +120,18 @@ Resources:
                   - logs:CreateLogStream
                   - logs:PutLogEvents
                 Resource: !GetAtt WorkerLogGroup.Arn
-              - Effect: Allow
-                Action:
-                  - ec2:CreateNetworkInterface
-                  - ec2:DescribeNetworkInterfaces
-                  - ec2:DescribeSubnets
-                  - ec2:DeleteNetworkInterface
-                  - ec2:AssignPrivateIpAddresses
-                  - ec2:UnassignPrivateIpAddresses
-                Resource: '*'
+              - !If
+                - AttachToVpc
+                - Effect: Allow
+                  Action:
+                    - ec2:CreateNetworkInterface
+                    - ec2:DescribeNetworkInterfaces
+                    - ec2:DescribeSubnets
+                    - ec2:DeleteNetworkInterface
+                    - ec2:AssignPrivateIpAddresses
+                    - ec2:UnassignPrivateIpAddresses
+                  Resource: '*'
+                - !Ref AWS::NoValue
         - PolicyName: controller-state-and-config
           PolicyDocument:
             Version: '2012-10-17'
@@ -194,9 +206,11 @@ Resources:
           LOCK_LEASE_SECONDS: !Ref LockLeaseSeconds
           RETRY_SECONDS: !Ref RetrySeconds
           RDS_CLUSTER_IDENTIFIER: !Ref RdsClusterIdentifier
-      VpcConfig:
-        SubnetIds: !Ref PrivateSubnetIds
-        SecurityGroupIds: !Ref SecurityGroupIds
+      VpcConfig: !If
+        - AttachToVpc
+        - SubnetIds: !Ref PrivateSubnetIds
+          SecurityGroupIds: !Ref SecurityGroupIds
+        - !Ref AWS::NoValue
       Tags:
         - Key: environment
           Value: !Ref EnvironmentName

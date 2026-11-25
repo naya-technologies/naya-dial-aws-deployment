@@ -135,6 +135,7 @@ def resolve(raw: dict, release: dict) -> dict:
 
     power = cfg.setdefault("power", {})
     power.setdefault("enabled", True)
+    power.setdefault("lambda_network", "auto")
     if power.get("schedule"):
         power["schedule"].setdefault("days", "SUN-THU")
         power["schedule"].setdefault("timezone", "Asia/Jerusalem")
@@ -163,6 +164,9 @@ def semantic_errors(cfg: dict) -> list[str]:
     """Rules a JSON schema cannot express. `cfg` must be resolved."""
     problems: list[str] = []
     region = cfg["aws"]["region"]
+    if cfg.get("power", {}).get("lambda_network") == "public" and not cfg["kubernetes"]["public_endpoint"]:
+        problems.append("power.lambda_network: public needs kubernetes.public_endpoint: true (the worker would run outside the VPC "
+                        "and could not reach a private cluster API)")
 
     for label, arn in (("domain.certificate_arn", cfg["domain"]["certificate_arn"]),
                        ("secrets.arn", cfg["secrets"]["arn"])):

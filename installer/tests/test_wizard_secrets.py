@@ -113,7 +113,7 @@ class WizardTests(Base):
     def test_without_a_schedule_the_control_is_still_created(self):
         answers = self.run_wizard(["acme", "us-east-1", "", "dial.acme.example", "y", CERT, "1", "", "1", "", "1", "1", "y", "n", "n", "y", SECRET])
         cfg = config.resolve(config.load(self.write(wizard.render_config(answers))), RELEASE)
-        self.assertEqual(cfg["power"], {"enabled": True})
+        self.assertEqual(cfg["power"], {"enabled": True, "lambda_network": "auto"})
 
     def test_blank_secret_arn_leaves_a_todo_that_check_refuses(self):
         answers = self.run_wizard(["acme", "us-east-1", "", "dial.acme.example", "y", CERT, "1", "", "1", "", "1", "1", "y", "n", "n", "y", ""])

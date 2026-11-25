@@ -155,6 +155,75 @@ class TemplateTests(Base):
         self.assertRegex(power.artifact_prefix(), r"^artifacts/[0-9a-f]{64}$")
 
 
+class NetworkModeTests(Base):
+    """One worker; where it runs depends on the deployment, as in the environments it comes from (vpc / public)."""
+
+    def mode(self, responses=None, **sections):
+        cfg = resolved(**sections)
+        ctx = make_ctx(cfg=cfg, responses=responses or {})
+        return power.network_mode(ctx), power.findings(ctx), ctx
+
+    def existing(self, **network):
+        return {"provider": "existing-vpc", "vpc_id": "vpc-1", "subnets": {"private": ["subnet-a", "subnet-b"], "public": []},
+                "exposure": "internal", **network}
+
+    def test_a_network_created_by_the_installer_runs_it_in_the_vpc(self):
+        mode, found, _ = self.mode()
+        self.assertEqual(mode, "vpc")
+        self.assertEqual(found[0].level, "ok")
+
+    def test_installer_endpoints_without_internet_run_it_in_the_vpc(self):
+        mode, _, _ = self.mode(network=self.existing(create_vpc_endpoints=True))
+        self.assertEqual(mode, "vpc")
+
+    def test_an_existing_vpc_with_a_default_route_runs_it_in_the_vpc(self):
+        routes = {("aws", "ec2", "describe-route-tables"): ok_json({"RouteTables": [{"Routes": [{"DestinationCidrBlock": "0.0.0.0/0", "State": "active"}]}]})}
+        mode, _, _ = self.mode(routes, network=self.existing())
+        self.assertEqual(mode, "vpc")
+
+    def test_an_existing_vpc_with_its_own_endpoints_for_every_service_runs_it_in_the_vpc(self):
+        endpoints = {("aws", "ec2", "describe-vpc-endpoints"): ok_json({"VpcEndpoints": [
+            {"ServiceName": f"com.amazonaws.us-east-1.{s}"} for s in power.NEEDED_SERVICES]})}
+        mode, _, _ = self.mode(endpoints, network=self.existing())
+        self.assertEqual(mode, "vpc")
+
+    def test_no_way_to_aws_from_the_vpc_runs_it_outside_without_http_checks(self):
+        mode, found, ctx = self.mode(network=self.existing())
+        self.assertEqual(mode, "public")
+        self.assertEqual(found[0].level, "warn")
+        self.assertEqual(power.http_endpoints(ctx), [])
+
+    def test_no_way_to_aws_and_a_private_cluster_api_cannot_work(self):
+        mode, found, _ = self.mode(network=self.existing(), kubernetes={"public_endpoint": False})
+        self.assertEqual(mode, "vpc")
+        self.assertEqual(found[0].level, "fail")
+        self.assertIn("create_vpc_endpoints", found[0].fix)
+
+    def test_public_can_still_check_an_open_internet_facing_load_balancer(self):
+        _, _, ctx = self.mode(network=self.existing(exposure="public"), power={"lambda_network": "public"})
+        self.assertTrue(power.http_endpoints(ctx))
+        _, _, ctx = self.mode(network=self.existing(exposure="public", allowed_cidrs=["10.0.0.0/8"]), power={"lambda_network": "public"})
+        self.assertEqual(power.http_endpoints(ctx), [])
+
+    def test_the_choice_reaches_the_stack_and_the_configuration(self):
+        env = Env()
+        ctx = new_ctx(env, cfg=resolved(power={"lambda_network": "public"}))
+        power.deploy(ctx, lambda _m: None)
+        params = {p["ParameterKey"]: p["ParameterValue"] for p in env.stacks["acme-sleep-wake"]["Parameters"]}
+        self.assertEqual(params["LambdaNetworkMode"], "public")
+        config = json.loads(env.uploads[params["ConfigObjectKey"]])
+        self.assertEqual((config["eks"]["network"]["mode"], config["eks"]["network"]["privateSubnetIds"]), ("public", []))
+
+    def test_public_with_a_private_cluster_api_is_a_configuration_error(self):
+        from dial_install import config
+        problems = config.semantic_errors(resolved(power={"lambda_network": "public"}, kubernetes={"public_endpoint": False}))
+        self.assertTrue(any("lambda_network" in p for p in problems))
+
+    def test_the_template_attaches_the_worker_to_the_vpc_only_in_vpc_mode(self):
+        function = template("control.yaml")["Resources"]["WorkerFunction"]["Properties"]
+        self.assertEqual(function["VpcConfig"]["If"][0], "AttachToVpc")
+
+
 class ScheduleTests(Base):
     def test_cron(self):
         self.assertEqual(power.cron("19:30", "SUN-THU"), "cron(30 19 ? * SUN-THU *)")

@@ -74,6 +74,80 @@ def state_machine_arn(ctx: Context, action: str) -> str:
     return f"arn:aws:states:{ctx.region}:{ctx.account_id()}:stateMachine:{ctx.name}-{action}"
 
 
+# ---- where the worker runs -----------------------------------------------------------------------------------------------
+NEEDED_SERVICES = ("dynamodb", "rds", "autoscaling", "eks", "s3")       # what the worker calls, besides the Kubernetes API
+
+
+def vpc_reaches_aws(ctx: Context) -> tuple[bool, str]:
+    """Can a Lambda in the installation's private subnets call AWS? (a default route through NAT, a transit gateway or a
+    firewall, or VPC endpoints for every service the worker uses). Returns (yes, why)."""
+    network = ctx.cfg["network"]
+    if network["provider"] == "create":
+        return True, "the network created by the installer has NAT gateways"
+    if network.get("create_vpc_endpoints"):
+        return True, "the installer creates VPC endpoints for every service the worker calls"
+    subnets = network.get("subnets", {}).get("private", [])
+    tables = (ctx.cloud.aws_json("ec2", "describe-route-tables", "--filters", f"Name=association.subnet-id,Values={','.join(subnets)}",
+                                 check=False) or {}).get("RouteTables", [])
+    if not tables and network.get("vpc_id"):                      # subnets without their own table use the VPC's main table
+        tables = (ctx.cloud.aws_json("ec2", "describe-route-tables", "--filters", f"Name=vpc-id,Values={network['vpc_id']}",
+                                     "Name=association.main,Values=true", check=False) or {}).get("RouteTables", [])
+    for table in tables:
+        for route in table.get("Routes", []):
+            if route.get("DestinationCidrBlock") == "0.0.0.0/0" and route.get("State", "active") == "active":
+                return True, "the private subnets have a default route"
+    endpoints = (ctx.cloud.aws_json("ec2", "describe-vpc-endpoints", "--filters", f"Name=vpc-id,Values={network.get('vpc_id', '')}",
+                                    check=False) or {}).get("VpcEndpoints", [])
+    present = {endpoint["ServiceName"].rsplit(".", 1)[-1] for endpoint in endpoints}
+    missing = [service for service in NEEDED_SERVICES if service not in present]
+    if not missing:
+        return True, "the VPC has endpoints for every service the worker calls"
+    return False, "the private subnets have no default route and no VPC endpoint for: " + ", ".join(missing)
+
+
+def network_mode(ctx: Context) -> str:
+    """`vpc` or `public` (power.lambda_network, default `auto`). In the VPC the worker reaches a private cluster API and an internal
+    load balancer, so it is preferred whenever the VPC can reach AWS; otherwise it runs outside the VPC, which needs the public
+    EKS endpoint and cannot check an internal load balancer."""
+    choice = ctx.cfg.get("power", {}).get("lambda_network", "auto")
+    if choice != "auto":
+        return choice
+    memo = ctx.cache.setdefault("power_network_mode", {})
+    if "mode" not in memo:
+        reaches, _ = vpc_reaches_aws(ctx)
+        memo["mode"] = "vpc" if reaches or not ctx.cfg["kubernetes"]["public_endpoint"] else "public"
+    return memo["mode"]
+
+
+def findings(ctx: Context) -> list:
+    """For `check`: where the worker will run, and whether that works."""
+    from .findings import fail, ok, warn
+    if not enabled(ctx):
+        return []
+    choice = ctx.cfg.get("power", {}).get("lambda_network", "auto")
+    reaches, why = vpc_reaches_aws(ctx)
+    public_api = ctx.cfg["kubernetes"]["public_endpoint"]
+    mode = network_mode(ctx)
+    if mode == "vpc" and not reaches:
+        return [fail("sleep-wake", f"the sleep / wake worker cannot run in the VPC: {why}",
+                     "Set network.create_vpc_endpoints: true (the installer adds the endpoints), give the private subnets a route to NAT, "
+                     "or set power.lambda_network: public (needs kubernetes.public_endpoint: true).")]
+    if mode == "public" and not public_api:
+        return [fail("sleep-wake", "power.lambda_network: public needs the public EKS endpoint",
+                     "Set kubernetes.public_endpoint: true, or power.lambda_network: vpc.")]
+    if mode == "public":
+        note = "it cannot reach an internal load balancer, so waking does not check the public addresses" if not _public_http(ctx) else \
+               "it checks the public addresses through the internet-facing load balancer"
+        return [warn("sleep-wake", f"the sleep / wake worker runs outside the VPC ({'chosen' if choice == 'public' else why}); {note}")]
+    return [ok("sleep-wake", f"the sleep / wake worker runs in the VPC ({why})")]
+
+
+def _public_http(ctx: Context) -> bool:
+    """Outside the VPC the worker reaches the load balancer only when it is internet-facing and open to everyone."""
+    network = ctx.cfg["network"]
+    return network["exposure"] == "public" and "0.0.0.0/0" in network.get("allowed_cidrs", ["0.0.0.0/0"])
+
+
 # ---- schedule ----------------------------------------------------------------------------------------------------------------
 def cron(clock: str, days: str) -> str:
     hour, minute = (int(part) for part in clock.split(":"))
@@ -166,7 +240,10 @@ def workloads(ctx: Context) -> tuple[list[str], list[dict], list[dict]]:
 
 
 def http_endpoints(ctx: Context) -> list[dict]:
-    """The public endpoints of the installation, through its load balancer; waking is complete only when they answer."""
+    """The public endpoints of the installation, through its load balancer; waking is complete only when they answer. None when the
+    worker cannot reach the load balancer (outside the VPC, with an internal or restricted load balancer)."""
+    if network_mode(ctx) == "public" and not _public_http(ctx):
+        return []
     hosts = ctx.cfg["domain"]["hosts"]
     checks = [("core", "/health", [200]), ("chat", "/bff/health", [200]), ("admin", "/api/health", [200]),
               ("themes", "/health", [200]), ("flows", "/health", [200]),
@@ -192,6 +269,7 @@ def build_config(ctx: Context, bucket: str) -> dict:
     network = ctx.outputs["network"]
     database = f"{ctx.name}-db"
     schedule = ctx.cfg.get("power", {}).get("schedule")
+    in_vpc = network_mode(ctx) == "vpc"
     return {
         "schemaVersion": 1,
         "environment": ctx.name,
@@ -200,9 +278,9 @@ def build_config(ctx: Context, bucket: str) -> dict:
         "eks": {
             "authenticationMode": "API",                     # the installer creates the cluster with access entries only
             "clusterArn": compute["ClusterArn"], "clusterName": ctx.cluster_name,
-            "network": {"clusterSecurityGroupId": compute["ClusterSecurityGroupId"], "mode": "vpc",
-                        "privateSubnetIds": [network["PrivateSubnet1Id"], network["PrivateSubnet2Id"]],
-                        "securityGroupIds": [compute["ClusterSecurityGroupId"]], "vpcId": network["VPCId"]},
+            "network": {"clusterSecurityGroupId": compute["ClusterSecurityGroupId"], "mode": network_mode(ctx),
+                        "privateSubnetIds": [network["PrivateSubnet1Id"], network["PrivateSubnet2Id"]] if in_vpc else [],
+                        "securityGroupIds": [compute["ClusterSecurityGroupId"]] if in_vpc else [], "vpcId": network["VPCId"]},
             "nodeGroups": groups,
         },
         "healthChecks": {
@@ -335,7 +413,7 @@ def control_parameters(ctx: Context, bucket: str, prefix: str, config_key: str, 
         "SecurityGroupIds": ctx.outputs["compute"]["ClusterSecurityGroupId"],
         "NodegroupArns": ",".join(g["arn"] for g in groups),
         "RdsClusterArn": f"arn:aws:rds:{ctx.region}:{ctx.account_id()}:cluster:{database}", "RdsClusterIdentifier": database,
-        "KubernetesAccessGroup": access_group(ctx),
+        "KubernetesAccessGroup": access_group(ctx), "LambdaNetworkMode": network_mode(ctx),
         "LambdaMemoryMb": CONTROLLER["lambda"]["memoryMb"], "LambdaTimeoutSeconds": CONTROLLER["lambda"]["timeoutSeconds"],
         "LockLeaseSeconds": CONTROLLER["lockLeaseSeconds"], "RetrySeconds": CONTROLLER["retrySeconds"],
         "LogRetentionDays": CONTROLLER["logRetentionDays"],

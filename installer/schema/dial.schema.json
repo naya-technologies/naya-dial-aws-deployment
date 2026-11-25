@@ -516,6 +516,16 @@
               "description": "IANA time zone of the times."
             }
           }
+        },
+        "lambda_network": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "vpc",
+            "public"
+          ],
+          "default": "auto",
+          "description": "Where the sleep / wake worker runs. auto (default): in the VPC when it can reach AWS from there (NAT, or VPC endpoints), otherwise outside it. vpc: in the private subnets. public: outside the VPC (needs kubernetes.public_endpoint: true; cannot check an internal load balancer)."
         }
       }
     }
