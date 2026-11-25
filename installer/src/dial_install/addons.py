@@ -110,7 +110,8 @@ def latest_version(ctx: Context, entry: dict) -> str:
             return "<latest>"
         raise InstallerError(
             f"Could not find the latest version of {entry['display_name']} in {host}/{repository}.\n{(listing.stderr or '').strip()[-400:]}",
-            "Check that your AWS account may read Naya's registry (ask Naya to allow your account), or name the version: --version <tag>.")
+            "Check that this machine can reach Naya's registry (for a private one, that your AWS account is allowed to read it: ask Naya), "
+            "or name the version: --version <tag>.")
     return versions[-1][1]
 
 
@@ -312,8 +313,8 @@ def copy_images(ctx: Context, entry: dict, say: Say) -> None:
     copied, skipped = mirror.copy_pairs(
         ctx, pairs, lambda text: say("  " + text.strip()), source_hosts=(entry["source"]["registry"],),
         hint=f"The images of {entry['display_name']} {entry['version']} are in Naya's registry "
-             f"({entry['source']['registry']}). Check that your AWS account may pull from it (ask Naya to allow your account) "
-             "and that this version has been published; then run the command again.")
+             f"({entry['source']['registry']}). Check that this machine can reach it (for a private registry, that your AWS account is allowed to pull "
+             "from it: ask Naya) and that this version has been published; then run the command again.")
     say(f"  {copied} copied, {skipped} already there")
 
 

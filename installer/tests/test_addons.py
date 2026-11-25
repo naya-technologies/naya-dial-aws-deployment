@@ -1,5 +1,6 @@
 """Add-ons: catalog, rendering, install / upgrade / remove against a scripted fake of AWS, Kubernetes and Helm."""
 
+import copy
 import json
 import subprocess
 import tempfile
@@ -347,6 +348,39 @@ class InstallTests(Base):
         self.assertEqual(cluster.events, [])
         self.assertEqual(cluster.releases, {})
         self.assertTrue(ctx.cloud.runner.writes)
+
+
+class PublicSourceRegistryTests(Base):
+    """Amazon ECR Public as the source: anyone may pull, so the installer logs in to nothing but the customer's own registry."""
+
+    def public_entry(self):
+        entry = copy.deepcopy(addons.entry_for("ai-brain"))
+        entry["source"]["registry"] = "public.ecr.aws/naya"
+        return entry
+
+    def test_no_login_is_made_to_a_public_source_and_the_target_still_is(self):
+        from dial_install import mirror
+        ctx = new_ctx(Cluster())
+        directory = mirror._docker_config(ctx, ["123456789012.dkr.ecr.us-east-1.amazonaws.com", "public.ecr.aws"])
+        try:
+            auths = json.loads((directory / "config.json").read_text())["auths"]
+        finally:
+            import shutil
+            shutil.rmtree(directory)
+        self.assertEqual(list(auths), ["123456789012.dkr.ecr.us-east-1.amazonaws.com"])
+        self.assertEqual(len(ctx.cloud.runner.called("aws", "ecr", "get-login-password")), 1)
+
+    def test_the_newest_version_and_the_copy_work_with_a_public_source(self):
+        cluster = Cluster()
+        ctx = new_ctx(cluster)
+        entry = self.public_entry()
+        with tools_patch():
+            pinned = addons.pin(ctx, entry)
+            addons.copy_images(ctx, pinned, lambda _m: None)
+        self.assertEqual(pinned["version"], LATEST)
+        self.assertEqual(ctx.cloud.runner.called("/usr/bin/crane", "ls")[0][2], "public.ecr.aws/naya/naya-dial-ai-brain")
+        self.assertEqual(len(ctx.cloud.runner.called("aws", "ecr", "get-login-password")), 1)        # only the customer's registry, for the copy
+        self.assertTrue(any(e.startswith(f"copy public.ecr.aws/naya/naya-dial-ai-brain:{LATEST} -> 123456789012") for e in cluster.events))
 
 
 class UpgradeTests(Base):
