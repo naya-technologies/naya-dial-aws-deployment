@@ -22,6 +22,7 @@ SCHEMA_ID = "https://DialAIBrain"
 REGISTRY_TAGS = ["2026.11.1", "sha-781d641", "2026.11.3", "2026.11.2", "sha-54a7ea9"]       # what `crane ls` shows (not in order)
 LATEST = "2026.11.3"
 APP = "dial-x-rag"
+SAMPLE_REQUIRED = {"guardrail_id": "abc123def456", "guardrail_version": "1"}      # a value for every required catalog setting
 
 
 class Cluster:
@@ -168,7 +169,10 @@ class CatalogTests(Base):
     def test_every_catalog_entry_renders_without_unknown_tokens_and_leaves_none_behind(self):
         ctx = make_ctx()
         for name, entry in addons.load_catalog().items():
-            document = addons.render_values(ctx, entry)
+            ctx.cache.setdefault("addon_stack_outputs", {})[name] = {"RoleArn": "arn:aws:iam::123456789012:role/r"}
+            required = {key: SAMPLE_REQUIRED[key] for key, option in addons.declared_options(entry).items() if option.get("required")}
+            options = addons.resolve_options(entry, None, required, ctx.region)
+            document = addons.render_values(ctx, entry, options)
             self.assertNotIn("PLACEHOLDER_", json.dumps(document), name)
 
     def test_values_point_at_the_customers_registry_and_keep_the_service_private(self):
@@ -396,7 +400,7 @@ class UpgradeTests(Base):
         cluster = Cluster(addons_installed={"ai-brain": addon_values(version)})
         _, changed, text = self.run_upgrade(cluster)
         self.assertFalse(changed)
-        self.assertIn("Nothing to do", text)
+        self.assertIn("Nothing to change", text)
         self.assertEqual(cluster.events, [])
 
     def test_a_new_version_is_copied_and_deployed_without_touching_core_when_the_registration_is_the_same(self):
@@ -722,7 +726,7 @@ class NodeGroupTests(Base):
         runner.responses[("aws", "cloudformation", "describe-stacks")] = cluster.cfn_describe
         uninstaller = uninstall.Uninstaller(ctx, lambda _m: None)
         self.assertEqual(uninstaller.addon_node_groups(), ["ai-rag"])
-        self.assertIn("node group of add-on ai-rag", "\n".join(uninstaller.plan()))
+        self.assertIn("(add-on ai-rag)", "\n".join(uninstaller.plan()))
         uninstaller.addon_stacks()
         self.assertEqual(cluster.node_stacks, {})
 

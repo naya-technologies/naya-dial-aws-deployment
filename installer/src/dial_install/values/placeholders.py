@@ -91,7 +91,28 @@ def _core_config(ctx: Context) -> str:
     }
     if ctx.cache.get("addon_applications"):             # applications of the installed add-ons (deploy.prepare reads them)
         document["applications"] = dict(ctx.cache["addon_applications"])
+    _attach_interceptors(document, ctx.cache.get("addon_interceptors") or {}, ctx.cache.get("addon_interceptor_attachments") or [])
     return json.dumps(document, indent=2)
+
+
+def _attach_interceptors(document: dict, interceptors: dict, attachments: list[dict]) -> None:
+    """Interceptors of the installed add-ons, attached to the named models and applications, or to every deployment
+    (`globalInterceptors`)."""
+    if not interceptors:
+        return
+    document["interceptors"] = dict(interceptors)
+    for attach in attachments:
+        name = attach["interceptor"]
+        if attach.get("global"):
+            document.setdefault("globalInterceptors", [])
+            if name not in document["globalInterceptors"]:
+                document["globalInterceptors"].append(name)
+            continue
+        for deployment in attach.get("deployments", []):
+            for section in ("models", "applications"):
+                target = document.get(section, {}).get(deployment)
+                if target is not None and name not in target.setdefault("interceptors", []):
+                    target["interceptors"].append(name)
 
 
 def _superset_database_uri(ctx: Context) -> str:

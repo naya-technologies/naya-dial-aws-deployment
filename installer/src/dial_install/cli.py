@@ -12,6 +12,29 @@ from .errors import CommandError, InstallerError
 from .runner import Runner
 
 
+_BUILT_IN_FLAGS = {"--model", "--version", "--instance-type", "--nodes", "--no-dedicated-nodes"}
+
+
+def _catalog_flags() -> dict[str, dict]:
+    """name -> option, for every add-on setting in the catalog that has its own flag (e.g. --guardrail-id)."""
+    from . import addons
+    found: dict[str, dict] = {}
+    for entry in addons.load_catalog().values():
+        for name, option in (entry.get("options") or {}).items():
+            if option.get("flag") and option["flag"] not in _BUILT_IN_FLAGS:
+                found.setdefault(name, option)
+    return found
+
+
+def _addon_settings(args: argparse.Namespace) -> dict | None:
+    settings = {key: value for key, value in (
+        ("model", getattr(args, "model", None)), ("version", getattr(args, "addon_version", None)),
+        ("instance_type", getattr(args, "instance_type", None)), ("nodes", getattr(args, "nodes", None)),
+        ("dedicated_nodes", "false" if getattr(args, "no_dedicated_nodes", False) else None)) if value}
+    settings.update({key[4:]: value for key, value in vars(args).items() if key.startswith("opt_") and value is not None})
+    return settings or None
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="dial-install",
@@ -75,6 +98,12 @@ def _parser() -> argparse.ArgumentParser:
             one.add_argument("--nodes", help="add-ons with their own nodes: number of nodes (1-10)")
             one.add_argument("--no-dedicated-nodes", action="store_true",
                              help="add-ons with their own nodes: run on the shared platform nodes instead (not recommended)")
+            for name, option in _catalog_flags().items():          # settings declared by add-ons in the catalog
+                if option.get("pattern") == "^(true|false)$":
+                    one.add_argument(option["flag"], dest=f"opt_{name}", action="store_const", const="true",
+                                     help=option.get("description", ""))
+                else:
+                    one.add_argument(option["flag"], dest=f"opt_{name}", metavar="VALUE", help=option.get("description", ""))
             one.add_argument("--model", help="add-ons that use a model (AI RAG): the DIAL model (deployment id) to use; "
                                              "default: the system default model, or the one already installed")
         if action == "remove":
@@ -139,10 +168,7 @@ def _dispatch(args: argparse.Namespace) -> int:
         keep_snapshot=getattr(args, "keep_snapshot", False),
         allow_missing_images=getattr(args, "allow_missing_images", 0),
         addon=getattr(args, "addon", None),
-        addon_settings={key: value for key, value in (
-            ("model", getattr(args, "model", None)), ("version", getattr(args, "addon_version", None)),
-            ("instance_type", getattr(args, "instance_type", None)), ("nodes", getattr(args, "nodes", None)),
-            ("dedicated_nodes", "false" if getattr(args, "no_dedicated_nodes", False) else None)) if value} or None,
+        addon_settings=_addon_settings(args),
     )
     runner = Runner(dry_run=options.dry_run)
     commands = {

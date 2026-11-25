@@ -73,7 +73,7 @@ class Uninstaller:
         """Names of the add-ons whose own node group stack exists (created by `add-ons install`, tagged with the add-on)."""
         found = []
         for name, entry in addons.load_catalog().items():
-            if entry.get("node_group") and addons.node_stack_exists(self.ctx, name):
+            if addons.has_stack(entry) and addons.node_stack_exists(self.ctx, name):
                 found.append(name)
         return found
 
@@ -93,7 +93,7 @@ class Uninstaller:
         stacks = self.owned_stacks()
         lines = [f"Cluster workloads: DIAL, Knative, Istio, load balancers, volumes (cluster {self.ctx.cluster_name})",
                  f"Private DNS zone {self.namespace}.knative.{self.ctx.name}.internal"]
-        lines += [f"CloudFormation stack {addons.node_stack(self.ctx, name)} (node group of add-on {name})" for name in self.addon_node_groups()]
+        lines += [f"CloudFormation stack {addons.node_stack(self.ctx, name)} (add-on {name})" for name in self.addon_node_groups()]
         lines += [f"CloudFormation stack {name} ({slot})" for slot, name in stacks.items()]
         if not self.keep_images:
             lines.append(f"{len(self.repositories())} mirrored product image repositories in your ECR")

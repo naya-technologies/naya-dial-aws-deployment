@@ -9,7 +9,7 @@ computer.
 - A private EKS cluster, Aurora PostgreSQL database, ElastiCache Redis, Cognito sign-in (or your SAML provider),
   load balancer with your certificate, and the DIAL platform on top.
 - The product images copied into **your own** private ECR registry.
-- Optional **add-ons** (AI Brain, AI RAG, ...) that you install, upgrade and remove one by one with `./dial-install add-ons`.
+- Optional **add-ons** (AI Brain, AI RAG, Bedrock Guardrail interceptor, ...) that you install, upgrade and remove one by one with `./dial-install add-ons`.
 - Later upgrades with one command, and a clean removal with one command.
 
 Typical time: 1-2 hours, mostly waiting for AWS.

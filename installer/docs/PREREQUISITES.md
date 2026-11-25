@@ -46,6 +46,10 @@ Add-ons (`./dial-install add-ons`, see [ADDONS.md](ADDONS.md)) come from Naya's 
 - an add-on that has its own nodes (AI RAG) creates a CloudFormation stack with a node group: `cloudformation:*` on that stack, `eks:*Nodegroup*`, and EC2 quota
   for its instance type (for the default, 4 vCPU of On-Demand standard instances).
 
+For the Bedrock Guardrail interceptor (`bedrock-guardrail`): a published Amazon Bedrock guardrail in your account, `bedrock:GetGuardrail` for you
+(the installer checks it), and permission to create an IAM role through CloudFormation (`iam:CreateRole`, `iam:PutRolePolicy`, `iam:DeleteRole`,
+`iam:DeleteRolePolicy`, `iam:GetRole`).
+
 ## Database sign-in with the IAM role (optional)
 
 With `database.auth: iam` the installer creates the PostgreSQL role for DIAL Admin through a short Job inside the cluster

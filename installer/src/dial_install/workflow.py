@@ -481,7 +481,7 @@ def cmd_addons_list(options: Options, runner: Runner, say: Say) -> int:
 def cmd_addons_install(options: Options, runner: Runner, say: Say, ask: Callable[[str], str] = input) -> int:
     entry = addons.entry_for(options.addon)
     requested, settings = addons.split_settings(options.addon_settings)
-    addons.resolve_options(entry, None, settings)         # a wrong flag fails before anything is touched
+    addons.check_given(entry, settings)                   # a wrong flag fails before anything is touched
     ctx = _addon_context(options, runner, say)
     if ctx is None:
         return 1
@@ -497,14 +497,14 @@ def cmd_addons_install(options: Options, runner: Runner, say: Say, ask: Callable
 def cmd_addons_upgrade(options: Options, runner: Runner, say: Say, ask: Callable[[str], str] = input) -> int:
     entry = addons.entry_for(options.addon)
     requested, settings = addons.split_settings(options.addon_settings)
-    addons.resolve_options(entry, None, settings)
+    addons.check_given(entry, settings)
     ctx = _addon_context(options, runner, say)
     if ctx is None:
         return 1
     entry = addons.pin(ctx, entry, requested)
     state = addons.installed(ctx).get(options.addon)
-    if addons.is_current(entry, state, settings):
-        say(f"{entry['display_name']} is already at {entry['version']}. Nothing to do.")
+    if addons.is_current(entry, state, settings, ctx.region):
+        addons.upgrade(ctx, options.addon, say, options.addon_settings)      # nothing to change; an add-on with checks is checked again
         return 0
     if not _confirm(options, say, f"Upgrade {entry['display_name']} {state['version'] if state else '?'} -> {entry['version']}?", ask):
         say("Cancelled. Nothing was changed.")
