@@ -22,8 +22,8 @@ selects (`./dial-install status` shows it). If it is not, the command says so an
 **install** does, in this order, and stops at the first problem:
 
 1. copies the add-on's images from Naya's registry into your private ECR (same step as `apply` uses for the platform images;
-   what is already there is skipped). Your AWS account must be allowed to pull from Naya's registry; if it is not, the message names
-   the registry. With `registry.provider: public` nothing is copied and the cluster pulls from Naya's registry directly;
+   what is already there is skipped). Naya's registry is public (Amazon ECR Public, no account or login needed); if a registry is private, your AWS
+   account must be allowed to pull from it, and the message names it. With `registry.provider: public` nothing is copied and the cluster pulls from Naya's registry directly;
 2. installs the add-on as its own Helm release `dial-addon-<id>` in the DIAL namespace, and waits until it is ready;
 3. registers its application type(s) in DIAL Core: it upgrades the platform release with Core's configuration extended, and restarts
    Core once so that it reads it (about a minute; users may see a short interruption). Nothing else in the platform changes.
@@ -91,7 +91,7 @@ for QuickApps and Flows) is shipped once in `addons/charts/` and is the default 
 | `id` | Lower-case letters, digits, dashes; equal to the folder name. The Helm release is `<platform release>-addon-<id>`. |
 | `display_name`, `description` | Shown by `list`. |
 | `version` | `latest` (the default for every add-on: the newest `YYYY.M.N` tag in the registry when the command runs), or a tag to pin. |
-| `source.registry` | Registry host the images are copied from. |
+| `source.registry` | Registry the images are copied from: `public.ecr.aws/<alias>` (Amazon ECR Public: anonymous pull, no login) or a private ECR host such as `<account>.dkr.ecr.<region>.amazonaws.com` (the customer's AWS account must be allowed to pull). |
 | `node_group` | Optional. A dedicated node group: `instance_type`, `nodes`, `disk_gb`, and `workload` (the node label and taint). Adds the flags `--instance-type`, `--nodes`, `--no-dedicated-nodes`. |
 | `core.applications` | Optional. Applications registered in DIAL Core, in Core's configuration format. Tokens: `PLACEHOLDER_SERVICE_URL`, `PLACEHOLDER_THEMES_HOST` and the ones below. |
 | `service` | Optional. The component name of the add-on's service (`<platform release>-<service>`). Default: the component of its first application type. |
