@@ -270,7 +270,7 @@ class ApplyTests(Base):
                 kinds.append("helm:autoscaler")
         self.assertEqual(kinds[:9], [f"stack:acme-{s}" for s in ("network", "endpoints", "storage", "compute", "links", "cache", "database", "iam", "identity")])
         self.assertLess(kinds.index("helm:autoscaler"), kinds.index("helm:dial"))
-        self.assertIn("DIAL is installed.", say.text)
+        self.assertIn("DIAL is installed: acme", say.text)
         self.assertIn("chat.dial.acme.example", say.text)
         self.assertIn("alb-1.elb.amazonaws.com", say.text)
         self.assertTrue(any(argv[:3] == ["kubectl", "--context", "dial-acme"] and "delete" in argv and "dial-lic-ins" in argv
@@ -553,37 +553,6 @@ class LocalChartTests(Base):
         text = Path(workflow.__file__).read_text(encoding="utf-8")
         body = text[text.index("def cmd_upgrade"):text.index("Already up to date")]
         self.assertIn('ctx.cache.get("local_chart")', body)
-
-
-class FirstUserMessageTests(Base):
-    """Nobody can sign in until the first Cognito user exists; the installer says so at the end of the installation."""
-
-    def test_the_end_of_apply_tells_how_to_create_the_first_user(self):
-        from helpers import make_ctx
-        ctx = make_ctx()
-        say = Capture()
-        workflow._print_first_user(ctx, say)
-        text = say.text
-        self.assertIn("create the first user", text)
-        self.assertIn(FAKE_OUTPUTS["identity"]["UserPoolId"], text)
-        self.assertIn("group", text)
-        self.assertIn("admin-add-user-to-group", text)
-
-    def test_with_an_identity_provider_it_names_the_admin_group_instead(self):
-        from helpers import make_ctx
-        cfg = resolved()
-        cfg["identity"] = {**cfg["identity"], "provider": "cognito-saml"}
-        say = Capture()
-        workflow._print_first_user(make_ctx(cfg=cfg), say)
-        self.assertIn("identity provider", say.text)
-        self.assertNotIn("admin-create-user", say.text)
-
-    def test_only_a_first_installation_prints_it(self):
-        text = Path(workflow.__file__).read_text(encoding="utf-8")
-        body = text[text.index("def _verify_and_report"):text.index("def _print_first_user")]
-        self.assertIn("if first_install:", body)
-        install = text[text.index("def _install_platform"):text.index("def _verify_and_report")]
-        self.assertIn("first_install=True", install)
 
 
 class LicenseHelperTests(Base):

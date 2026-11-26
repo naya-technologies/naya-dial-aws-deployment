@@ -133,6 +133,10 @@ def resolve(raw: dict, release: dict) -> dict:
     # Container Insights puts a webhook on the control plane's path to the pods, which an overlay network cannot reach.
     features.setdefault("container_logs", kube["cni"] != "cilium")
 
+    groups = cfg["identity"].setdefault("groups", {})
+    for level in ("user", "developer", "admin"):
+        groups.setdefault(level, level)
+
     power = cfg.setdefault("power", {})
     power.setdefault("enabled", True)
     power.setdefault("lambda_network", "auto")
@@ -164,6 +168,9 @@ def semantic_errors(cfg: dict) -> list[str]:
     """Rules a JSON schema cannot express. `cfg` must be resolved."""
     problems: list[str] = []
     region = cfg["aws"]["region"]
+    names = list(cfg["identity"].get("groups", {}).values())
+    if len(names) != len(set(names)):
+        problems.append("identity.groups: the user, developer and admin groups need three different names")
     if cfg.get("power", {}).get("lambda_network") == "public" and not cfg["kubernetes"]["public_endpoint"]:
         problems.append("power.lambda_network: public needs kubernetes.public_endpoint: true (the worker would run outside the VPC "
                         "and could not reach a private cluster API)")

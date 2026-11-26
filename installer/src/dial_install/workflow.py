@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from . import __version__, adapters, addons, checks, desktop, power, licenses, cilium as cilium_mod, config, deploy, infra, mirror, modules as modules_mod, releases, uninstall as uninstall_mod
+from . import __version__, adapters, addons, checks, desktop, power, users, licenses, cilium as cilium_mod, config, deploy, infra, mirror, modules as modules_mod, releases, uninstall as uninstall_mod
 from .bootstrap import Bootstrap
 from .cloud import Cloud
 from .context import Context
@@ -267,12 +267,11 @@ def _verify_and_report(ctx: Context, say: Say, *, first_install: bool = False) -
             f"Check them with: kubectl --context {ctx.cloud.kube_context} -n "
             f"{ctx.release['helm_release']['namespace']} get pods\nThen run `./dial-install status`.",
         )
-    say("\nDIAL is installed.")
-    _print_dns(ctx, say)
-    if first_install:
-        _print_first_user(ctx, say)
+    account = users.prepare(ctx, say)                # the groups of the permission levels and the first administrator
     power.deploy(ctx, say)
     _deliver_desktop_file(ctx, say)
+    if not ctx.cloud.runner.dry_run:
+        say(users.summary(ctx, deploy.ingress_hostnames(ctx), account))
 
 
 def _managed_chat_id(ctx: Context) -> str:
@@ -287,27 +286,6 @@ def _deliver_desktop_file(ctx: Context, say: Say) -> None:
     """With features.desktop_app: write, check and print <name>.dialx.json (see desktop.py)."""
     if ctx.cfg["features"]["desktop_app"]:
         desktop.deliver(ctx, say, ctx.cache["output_dir"], _managed_chat_id(ctx))
-
-
-def _print_first_user(ctx: Context, say: Say) -> None:
-    """Nobody can sign in until the first user exists; the installer does not create users."""
-    if ctx.cloud.runner.dry_run:
-        return
-    if ctx.cfg["identity"]["provider"] != "cognito":
-        say("\nSigning in: users sign in through your identity provider. Map its administrator group to the group name `admin`.")
-        return
-    pool = ctx.outputs["identity"]["UserPoolId"]
-    region = ctx.region
-    say(f"""
-IMPORTANT - create the first user. Nobody can sign in until you do (DIAL does not create users for you):
-  1. AWS console > Amazon Cognito > User pools > the pool "{pool}" > Users > Create user.
-     Use an e-mail address as the user name; Cognito e-mails a temporary password.
-  2. Groups > Create group named "admin", then add the user to it. Members of "admin" are the DIAL administrators.
-Or from CloudShell:
-  aws cognito-idp admin-create-user --user-pool-id {pool} --region {region} --username <email> \\
-      --user-attributes Name=email,Value=<email> Name=email_verified,Value=true
-  aws cognito-idp create-group --user-pool-id {pool} --region {region} --group-name admin
-  aws cognito-idp admin-add-user-to-group --user-pool-id {pool} --region {region} --username <email> --group-name admin""")
 
 
 def _print_dns(ctx: Context, say: Say) -> None:

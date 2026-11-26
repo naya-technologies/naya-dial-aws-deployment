@@ -22,6 +22,7 @@ working examples are in [examples/](../examples/).
 | `network.create_vpc_endpoints` | `true` for `create`, else `false` | Create the VPC endpoints for AWS services. |
 | `identity.provider` | `cognito` | `cognito` or `cognito-saml`. |
 | `identity.saml.*` | none | `provider_name`, `metadata_url` (https), `idp_signout`. Required for SAML. |
+| `identity.groups.user`, `.developer`, `.admin` | `user`, `developer`, `admin` | Names of the Cognito groups of the three permission levels; `init` asks. The admin group is the administrator of DIAL Admin, Flow Builder and the Deployment Manager; every group is a role in DIAL Core. The installer creates the groups and the first administrator `admin@<domain>` (see [INSTALL.md](INSTALL.md#8-first-sign-in)). |
 | `identity.self_registration` | `false` | Let users sign themselves up. |
 | `database.min_capacity`, `max_capacity` | `1`, `4` | Aurora Serverless v2 capacity (ACU). The database scales between the two on its own; raise `max_capacity` if it becomes the bottleneck. |
 | `database.auth` | `password` | How DIAL Admin signs in to the database: `password` or `iam` (its IAM role: no password, short-lived tokens). The Deployment Manager and Superset still use the password. |

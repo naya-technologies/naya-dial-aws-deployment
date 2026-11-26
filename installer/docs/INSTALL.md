@@ -125,13 +125,23 @@ You can print them again at any time: `./dial-install status`. DNS can take up t
 
 ## 8. First sign-in
 
-The installer ends with the message **"create the first user"** (it does not create users). Nobody can sign in until you do.
+The installer ends with a summary: the address of every interface (Chat, Admin, Flow Builder, the DIAL API, Themes, Grafana and
+Superset), the DNS records to create for the load balancer, and the first sign-in:
 
+```
+  First sign-in
+    Open        https://admin.<your domain>
+    User name   admin@<your domain>
+    Password    DialXWelcome123!
+```
 
-1. Open `https://chat.<your domain>` and `https://admin.<your domain>`.
-2. With Cognito sign-in: AWS console -> Amazon Cognito -> your user pool -> create a user. To make that user an
-   administrator, create a group named `admin` and add the user to it.
-   With SAML sign-in, users sign in through your identity provider; map its administrator group to `admin`.
+The installer creates this first administrator in Cognito (when the admin group has no member yet) and the three groups of the
+permission levels: `user`, `developer` and `admin` (or the names you chose in `init`). Users get their permissions from their group.
+Cognito asks for a new password at the first sign-in; the initial one is valid for 7 days. The user name is an e-mail address because
+the user pool signs users in by e-mail; no e-mail is sent to it.
+
+Then add users in Cognito, or set up federated sign-in (your identity provider), and put each user in a group. Once real
+administrators exist you can delete `admin@<your domain>`; the installer never creates it again while the admin group has members.
 
 ## 9. DIAL X Desktop (optional)
 

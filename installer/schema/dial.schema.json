@@ -289,6 +289,29 @@
               "default": false
             }
           }
+        },
+        "groups": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Names of the Cognito groups of the three permission levels. Users inherit their permissions from their group.",
+          "properties": {
+            "user": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.@-]{0,63}$",
+              "default": "user"
+            },
+            "developer": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.@-]{0,63}$",
+              "default": "developer"
+            },
+            "admin": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.@-]{0,63}$",
+              "default": "admin",
+              "description": "Administrators of DIAL Admin, Flow Builder and the Deployment Manager."
+            }
+          }
         }
       },
       "allOf": [

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Group names are configurable.** The administrator group (`PLACEHOLDER_ADMIN_GROUP`, default `admin`) is used by DIAL Admin
+  (`ADMIN_ROLE_NAMES`, `AUTH_COGNITO_ADMIN_ROLE_NAMES`), Flow Builder (`ADMIN_ROLE_NAMES`) and the Deployment Manager (roles mapping to
+  `FULL_ADMIN`); the managed chat application allows `PLACEHOLDER_USER_GROUP`, `PLACEHOLDER_DEVELOPER_GROUP` and the admin group.
+
 - **DIAL Desktop support (optional, `features.desktop_app`).** The chat gets `APP_COGNITO_DESKTOP_CLIENT_ID` (empty unless the flag is on), the id of the
   new Cognito app client `dial-x-desktop`. Needs the chat image built from `feature/desktop-support`. Infrastructure change: the Cognito stack
   gets one more client, only when the flag is on.

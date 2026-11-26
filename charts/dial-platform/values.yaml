@@ -187,7 +187,7 @@ dial:
               "managed-model-chat": {
                 "displayName": "Managed model chat",
                 "description": "Internal execution application for the model selected in chat.",
-                "userRoles": ["default", "user", "admin"],
+                "userRoles": ["default", "PLACEHOLDER_USER_GROUP", "PLACEHOLDER_DEVELOPER_GROUP", "PLACEHOLDER_ADMIN_GROUP"],
                 "forwardAuthToken": true,
                 "inputAttachmentTypes": ["*/*"],
                 "features": {
@@ -635,12 +635,12 @@ admin:
       NEXTAUTH_URL: 'PLACEHOLDER_ADMIN_PUBLIC_URL'
       DIAL_ADMIN_API_URL: http://PLACEHOLDER_DIAL_RELEASE_NAME-admin-backend.dial.svc.cluster.local/
       THEMES_CONFIG_URL: 'PLACEHOLDER_THEMES_PUBLIC_URL'
-      ADMIN_ROLE_NAMES: admin
+      ADMIN_ROLE_NAMES: 'PLACEHOLDER_ADMIN_GROUP'
       AUTH_COGNITO_CLIENT_ID: 'PLACEHOLDER_COGNITO_CLIENT_ID'
       AUTH_COGNITO_HOST: 'PLACEHOLDER_COGNITO_HOST'
       AUTH_COGNITO_SECRET: 'PLACEHOLDER_COGNITO_CLIENT_SECRET'
       AUTH_COGNITO_DIAL_ROLES_FIELD: cognito:groups
-      AUTH_COGNITO_ADMIN_ROLE_NAMES: admin
+      AUTH_COGNITO_ADMIN_ROLE_NAMES: 'PLACEHOLDER_ADMIN_GROUP'
       DEPLOYMENTS_ENABLED: 'PLACEHOLDER_DEPLOYMENT_MANAGER_ENABLED'
       MCP_REGISTRY_ENABLED: 'PLACEHOLDER_DEPLOYMENT_MANAGER_ENABLED'
       DIAL_DEPLOYMENTS_API_URL: "http://dial-deployment-manager.{{ .Release.Namespace }}.svc.cluster.local"
@@ -795,7 +795,7 @@ flows-core:
     AUTH_COGNITO_HOST: PLACEHOLDER_COGNITO_HOST
     AUTH_COGNITO_CLIENT_ID: PLACEHOLDER_COGNITO_CLIENT_ID
     AUTH_COGNITO_ROLES_FIELD: "cognito:groups"
-    ADMIN_ROLE_NAMES: admin
+    ADMIN_ROLE_NAMES: 'PLACEHOLDER_ADMIN_GROUP'
     AUTH_COGNITO_LOGIN_PAGE_ENABLED: "false"
     AUTH_COOKIE_SECURE: "true"
     AUTH_COOKIE_SAME_SITE: lax
@@ -1335,7 +1335,7 @@ deployment-manager:
     SPRING_FLYWAY_SCHEMAS: deployment_manager
     SPRING_FLYWAY_CREATE_SCHEMAS: "true"
     SPRING_APPLICATION_JSON: >-
-      {"providers":{"cognito":{"issuer":"PLACEHOLDER_COGNITO_HOST","jwkSetUri":"PLACEHOLDER_COGNITO_JWKS_URL","principalClaim":"sub","audiences":["PLACEHOLDER_COGNITO_CLIENT_ID"],"roleClaims":["cognito:groups"],"emailClaims":["email"],"rolesMapping":"{\"admin\":[\"FULL_ADMIN\"],\"ConfigAdmin\":[\"FULL_ADMIN\"]}"}},"app":{"builder-root-image":"709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-dial-buildkit:2026.10.1","builder-rootless-image":"709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-dial-buildkit:2026.10.1-rootless","analyser-image":"709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-dial-syft:2026.10.1","copy-image":"709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-dial-skopeo:2026.10.1","builder-job-config":{"spec":{"template":{"spec":{"nodeSelector":{"workload":"dynamic"},"tolerations":[{"key":"dedicated","operator":"Equal","value":"dynamic","effect":"NoSchedule"}]}}}},"analyzer-job-config":{"spec":{"template":{"spec":{"nodeSelector":{"workload":"dynamic"},"tolerations":[{"key":"dedicated","operator":"Equal","value":"dynamic","effect":"NoSchedule"}]}}}},"copy-image-job-config":{"spec":{"template":{"spec":{"nodeSelector":{"workload":"dynamic"},"tolerations":[{"key":"dedicated","operator":"Equal","value":"dynamic","effect":"NoSchedule"}]}}}}}}
+      {"providers":{"cognito":{"issuer":"PLACEHOLDER_COGNITO_HOST","jwkSetUri":"PLACEHOLDER_COGNITO_JWKS_URL","principalClaim":"sub","audiences":["PLACEHOLDER_COGNITO_CLIENT_ID"],"roleClaims":["cognito:groups"],"emailClaims":["email"],"rolesMapping":"{\"PLACEHOLDER_ADMIN_GROUP\":[\"FULL_ADMIN\"],\"ConfigAdmin\":[\"FULL_ADMIN\"]}"}},"app":{"builder-root-image":"709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-dial-buildkit:2026.10.1","builder-rootless-image":"709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-dial-buildkit:2026.10.1-rootless","analyser-image":"709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-dial-syft:2026.10.1","copy-image":"709825985650.dkr.ecr.us-east-1.amazonaws.com/naya-technologies-by-epam/naya-dial-skopeo:2026.10.1","builder-job-config":{"spec":{"template":{"spec":{"nodeSelector":{"workload":"dynamic"},"tolerations":[{"key":"dedicated","operator":"Equal","value":"dynamic","effect":"NoSchedule"}]}}}},"analyzer-job-config":{"spec":{"template":{"spec":{"nodeSelector":{"workload":"dynamic"},"tolerations":[{"key":"dedicated","operator":"Equal","value":"dynamic","effect":"NoSchedule"}]}}}},"copy-image-job-config":{"spec":{"template":{"spec":{"nodeSelector":{"workload":"dynamic"},"tolerations":[{"key":"dedicated","operator":"Equal","value":"dynamic","effect":"NoSchedule"}]}}}}}}
   secrets:
     POSTGRES_DATASOURCE_PASSWORD: PLACEHOLDER_ADMIN_DB_PASSWORD
   networkPolicy:

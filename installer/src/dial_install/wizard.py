@@ -112,6 +112,11 @@ class Wizard:
         if not self.yes_no("Copy the product images into your own private ECR (recommended)?", True):
             answers["registry"] = {"provider": "public"}
 
+        if not self.yes_no("Keep the default names of the DIAL groups (user, developer, admin)?", True):
+            answers["groups"] = {level: self.text(f"Name of the {level} group", level, r"[A-Za-z0-9][A-Za-z0-9_.@-]{0,63}",
+                                                  "Letters, digits and _ . @ - only.")
+                                 for level in ("user", "developer", "admin")}
+
         secret_arn = self.optional("ARN of the Secrets Manager secret, if you already created it")
         answers["secrets"] = {"arn": secret_arn or _PLACEHOLDER_ARN}
         return answers
@@ -234,17 +239,21 @@ def render_config(answers: dict) -> str:
         lines.append(f"  allowed_cidrs: [{', '.join(network['allowed_cidrs'])}]")
 
     identity = answers["identity"]
+    group_names = answers.get("groups")
+    if identity or group_names:
+        lines += ["", "identity:"]
     if identity:
         saml = identity["saml"]
         lines += [
-            "",
-            "identity:",
             "  provider: cognito-saml",
             "  saml:",
             f"    provider_name: {saml['provider_name']}",
             f"    metadata_url: {saml['metadata_url']}",
             f"    idp_signout: {str(saml['idp_signout']).lower()}",
         ]
+    if group_names:
+        lines += ["  groups:                         # Cognito groups of the permission levels; users inherit their permissions"]
+        lines += [f"    {level}: {_yaml_scalar(name)}" for level, name in group_names.items()]
     if answers.get("database"):
         lines += ["", "database:", f"  auth: {answers['database']['auth']}              # password | iam"]
     if answers.get("features"):

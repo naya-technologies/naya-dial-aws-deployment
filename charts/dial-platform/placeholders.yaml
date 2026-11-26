@@ -19,6 +19,9 @@ placeholders:
   ADMIN_DB_IAM_USER:
     source: config
     description: PostgreSQL role DIAL Admin uses when it signs in with its IAM role (database.iam_user).
+  ADMIN_GROUP:
+    source: config
+    description: Cognito group of the administrators (identity.groups.admin) - DIAL Admin, Flow Builder, Deployment Manager, Core.
   ADMIN_BACKEND_RDS_ROLE_ARN:
     source: stack-output
     description: IAM role of the DIAL Admin backend that may connect to the database (database.auth iam).
@@ -136,6 +139,9 @@ placeholders:
   DEPLOYMENT_MANAGER_ROLE_ARN:
     source: stack-output
     description: IAM role of the Deployment Manager.
+  DEVELOPER_GROUP:
+    source: config
+    description: Cognito group of the developers (identity.groups.developer).
   DIAL_API_KEY:
     source: secret
     description: key dial_api_key
@@ -199,6 +205,9 @@ placeholders:
   THEMES_PUBLIC_URL:
     source: derived
     description: https:// + themes host.
+  USER_GROUP:
+    source: config
+    description: Cognito group of the users (identity.groups.user).
   VPC_ID:
     source: stack-output
     description: VPC id (network slot).

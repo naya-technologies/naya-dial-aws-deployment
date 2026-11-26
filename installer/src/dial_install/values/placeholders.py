@@ -87,7 +87,8 @@ def _core_config(ctx: Context) -> str:
         "keys": {ctx.secret["core_admin_api_key"]: {"project": "DIAL Admin", "roles": ["admin"]}},
         "models": models,
         "applicationTypeSchemas": _application_type_schemas(ctx),
-        "roles": {"admin": {"limits": {}}, "default": {"limits": {}}},
+        # `admin` is the role of the installer's own API key; the groups are the permission levels people get (identity.groups)
+        "roles": {name: {"limits": {}} for name in ("admin", "default", *ctx.cfg["identity"]["groups"].values())},
     }
     if ctx.cache.get("addon_applications"):             # applications of the installed add-ons (deploy.prepare reads them)
         document["applications"] = dict(ctx.cache["addon_applications"])
@@ -174,6 +175,9 @@ def table(ctx: Context) -> dict[str, Callable[[], str]]:
         "ANALYTICS_ENABLED": lambda: _bool(cfg["features"]["analytics"]),
         "DEPLOYMENT_MANAGER_ENABLED": lambda: _bool(cfg["features"]["deployment_manager"]),
         "ADMIN_DB_USER": lambda: "postgres",
+        "USER_GROUP": lambda: cfg["identity"]["groups"]["user"],
+        "DEVELOPER_GROUP": lambda: cfg["identity"]["groups"]["developer"],
+        "ADMIN_GROUP": lambda: cfg["identity"]["groups"]["admin"],
         "ADMIN_DB_IAM_USER": lambda: cfg["database"]["iam_user"],
         "ADMIN_BACKEND_RDS_ROLE_ARN": lambda: out["iam"]["AdminBackendRDSRoleArn"],
         # host names
